@@ -73,3 +73,5 @@
 - **Fila de tarea (2.ª pasada)**: el nombre de la tarea se acorta (máx. 440 px) y el cartel «Enviado a producción» va a su derecha en la misma línea; estado · responsable («Asignar» si no hay) · fecha · importe · clip «Ampliar» caben en una línea en escritorio (si no caben, el clip baja en vez de cortar datos).
 - **Fila de tarea (3.ª/4.ª pasada)**: nombre hasta 600 px (14,5 px de letra), importe más grande (88 px), y el botón del clip «Ampliar» pegado a la derecha de la línea de datos, justo bajo el cartel «Enviado a producción».
 - **Fila de tarea (5.ª pasada)**: todos los controles miden lo mismo (32 px) y la línea de datos se reparte con `flex` a todo el ancho del nombre + cartel de producción (mismo borde izquierdo y derecho).
+
+- 31-oct (noche): importe de la tarea cortado en la fila (caja de 62 px con 12 px de margen por lado). Ahora la caja es más ancha (flex 1.7, mín. 96 px), con 6 px de margen y sin flechitas; se ve 12500.50 completo.

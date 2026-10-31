@@ -610,3 +610,13 @@ main.auth-card .err { min-height: 18px; }
   .task .tmeta .clipbtn { padding: 0 9px; }
 }
 @media (min-width: 861px) { .task .tmeta .stsel { flex: 1.4 1 0; padding-left: 8px; padding-right: 15px; } .task .tmeta select:not(.stsel) { flex: .9 1 0; } .task .tmeta input[type=date] { flex: 1.4 1 0; } }
+
+/* Importe de la tarea: caja más ancha, sin flechitas ni margen de sobra para que se vea la cifra entera */
+.task .tmeta .costbox input[type=number] { padding-left: 6px !important; padding-right: 6px !important; -moz-appearance: textfield; appearance: textfield; font-variant-numeric: tabular-nums; }
+.task .tmeta .costbox input[type=number]::-webkit-outer-spin-button, .task .tmeta .costbox input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+@media (min-width: 861px) {
+  .task .tmeta .costbox { flex: 1.7 1 0; min-width: 96px; }
+  .task .tmeta .stsel { flex: 1.25 1 0; }
+  .task .tmeta select:not(.stsel) { flex: .85 1 0; }
+  .task .tmeta input[type=date] { flex: 1.25 1 0; }
+}
