@@ -231,8 +231,8 @@ input.title:hover { border-color: var(--line); }
 .rep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .rep-card { display: grid; gap: 8px; padding: 14px 16px; text-decoration: none; color: inherit; align-content: start; background: color-mix(in srgb, var(--c) 8%, var(--panel)); border: 1px solid color-mix(in srgb, var(--c) 35%, var(--line)); border-top: 4px solid var(--c); }
 .rep-card:hover { border-color: var(--c); box-shadow: 0 2px 10px color-mix(in srgb, var(--c) 20%, transparent); }
-.rep-card .top .st { margin-left: auto; }
-.rep-card .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.rep-card .rtop .st { margin-left: auto; }
+.rep-card .rtop { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .rep-card h3 { margin: 0; font-size: 15px; line-height: 1.25; }
 .rep-card .meta { font-size: 12.5px; color: var(--muted); }
 .rep-card .foot { display: flex; justify-content: space-between; font-size: 12.5px; padding-top: 8px; border-top: 1px solid var(--line); }
@@ -286,3 +286,6 @@ input.title:hover { border-color: var(--line); }
 .tsec > .th { color: color-mix(in srgb, var(--sc) 75%, var(--ink)); }
 .tsec .sdot { width: 9px; height: 9px; border-radius: 50%; background: var(--sc); flex: none; }
 .tsec .task { border-top-color: color-mix(in srgb, var(--sc) 18%, var(--line)); }
+.rep-card .foot .price { font-weight: 700; font-size: 14px; }
+.rep-card .ttype { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: color-mix(in srgb, var(--c) 75%, var(--ink)); margin-top: -2px; }
+.rep-card .ttype .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }

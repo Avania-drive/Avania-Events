@@ -68,7 +68,7 @@ export function fmtRange(a, b) {
   const x = pd(a), y = pd(b);
   return x.getUTCMonth() === y.getUTCMonth() && x.getUTCFullYear() === y.getUTCFullYear() ? `${x.getUTCDate()}–${y.getUTCDate()} ${MONTHS_SHORT[y.getUTCMonth()]}` : `${fmtDate(a)} – ${fmtDate(b)}`;
 }
-export const fmtMoney = (n) => (n == null || n === '' ? '' : new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: Number(n) % 1 ? 2 : 0 }).format(Number(n)));
+export const fmtMoney = (n) => (n == null || n === '' ? '' : new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: Number(n) % 1 ? 2 : 0, useGrouping: 'always' }).format(Number(n)));
 export const today = () => new Date().toISOString().slice(0, 10);
 export const initials = (u) => String(u?.name || u?.email || '?').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
 export const firstName = (u) => String(u?.name || String(u?.email || '').split('@')[0] || '').split(/\s+/)[0];

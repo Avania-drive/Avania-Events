@@ -13,12 +13,13 @@ function barList(rows, total) {
 function card(e) {
   const t = typeOf(e.type_id), o = userOf(e.owner_id), late = e.tasks_overdue > 0;
   return el('a', { class: 'card rep-card', href: `#/evento/${e.id}`, style: { '--c': t?.color || '#98a2b3' } },
-    el('div', { class: 'top' }, el('span', { class: 'ref' }, e.ref), el('span', { class: 'chip', style: { '--c': t?.color || '#98a2b3' } }, t?.name || 'Sin tipo'), statusBadge(state.meta.eventStatus[e.status], STATUS_COLOR[e.status])),
+    el('div', { class: 'rtop' }, el('span', { class: 'ref' }, e.ref), statusBadge(state.meta.eventStatus[e.status], STATUS_COLOR[e.status])),
     el('h3', {}, e.name),
     el('div', { class: 'meta' }, [e.starts_on ? fmtRange(e.starts_on, e.ends_on) : 'Sin fecha', o ? (o.name || o.email) : null].filter(Boolean).join(' · ')),
     el('div', { class: 'prog' }, el('div', { class: 'bar' }, el('i', { style: { width: `${pct(e.tasks_done, e.tasks_total)}%` } })),
       `${e.tasks_done} de ${e.tasks_total} tareas${late ? ` · ${e.tasks_overdue} vencida${e.tasks_overdue === 1 ? '' : 's'}` : ''}`),
-    el('div', { class: 'foot' }, el('span', {}, e.cost != null ? fmtMoney(e.cost) : 'Sin coste'), el('span', { class: e.invoiced ? 'ok' : 'muted' }, e.invoiced ? 'Facturada' : 'Sin facturar')));
+    el('div', { class: 'foot' }, e.cost != null ? el('strong', { class: 'price' }, fmtMoney(e.cost)) : el('span', { class: 'muted' }, 'Sin coste'), el('span', { class: e.invoiced ? 'ok' : 'muted' }, e.invoiced ? 'Facturada' : 'Sin facturar')),
+    el('div', { class: 'ttype' }, el('i', { class: 'dot' }), t?.name || 'Sin tipo'));
 }
 
 export async function informesView() {
