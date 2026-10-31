@@ -12,10 +12,10 @@ function barList(rows, total) {
 
 function card(e) {
   const t = typeOf(e.type_id), o = userOf(e.owner_id), late = e.tasks_overdue > 0;
-  return el('a', { class: 'card rep-card', href: `#/evento/${e.id}` },
-    el('div', { class: 'top' }, el('span', { class: 'ref' }, e.ref), statusBadge(state.meta.eventStatus[e.status], STATUS_COLOR[e.status])),
+  return el('a', { class: 'card rep-card', href: `#/evento/${e.id}`, style: { '--c': t?.color || '#98a2b3' } },
+    el('div', { class: 'top' }, el('span', { class: 'ref' }, e.ref), el('span', { class: 'chip', style: { '--c': t?.color || '#98a2b3' } }, t?.name || 'Sin tipo'), statusBadge(state.meta.eventStatus[e.status], STATUS_COLOR[e.status])),
     el('h3', {}, e.name),
-    el('div', { class: 'meta' }, [e.starts_on ? fmtRange(e.starts_on, e.ends_on) : 'Sin fecha', t?.name, o ? (o.name || o.email) : null].filter(Boolean).join(' · ')),
+    el('div', { class: 'meta' }, [e.starts_on ? fmtRange(e.starts_on, e.ends_on) : 'Sin fecha', o ? (o.name || o.email) : null].filter(Boolean).join(' · ')),
     el('div', { class: 'prog' }, el('div', { class: 'bar' }, el('i', { style: { width: `${pct(e.tasks_done, e.tasks_total)}%` } })),
       `${e.tasks_done} de ${e.tasks_total} tareas${late ? ` · ${e.tasks_overdue} vencida${e.tasks_overdue === 1 ? '' : 's'}` : ''}`),
     el('div', { class: 'foot' }, el('span', {}, e.cost != null ? fmtMoney(e.cost) : 'Sin coste'), el('span', { class: e.invoiced ? 'ok' : 'muted' }, e.invoiced ? 'Facturada' : 'Sin facturar')));
@@ -38,7 +38,7 @@ export async function informesView() {
     const noDate = l.filter((e) => !e.starts_on).length; if (noDate) months.push({ label: 'Sin fecha', n: noDate, color: '#98a2b3' });
     const sorted = [...l].sort((a, b) => (a.starts_on || '9999').localeCompare(b.starts_on || '9999'));
 
-    body.replaceChildren(
+    body.replaceChildren(...[
       el('h2', { class: 'rep-h' }, 'Informe global'),
       l.length ? null : el('p', { class: 'muted' }, 'No hay acciones en este periodo.'),
       el('div', { class: 'tiles' },
@@ -52,7 +52,7 @@ export async function informesView() {
         el('section', { class: 'card sec' }, el('h3', {}, 'Por tipo de acción'), barList(byType, l.length)),
         el('section', { class: 'card sec' }, el('h3', {}, 'Por mes de inicio'), barList(months, l.length))),
       el('h2', { class: 'rep-h' }, 'Cada acción'),
-      el('div', { class: 'rep-grid' }, sorted.map(card)));
+      el('div', { class: 'rep-grid' }, sorted.map(card))].filter(Boolean));
   }
   draw();
   return el('div', { class: 'page', 'data-title': 'Informes' },
