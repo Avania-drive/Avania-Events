@@ -454,3 +454,16 @@ main.auth-card .err { min-height: 18px; }
 .lockbar .muted { color: inherit; opacity: .8; font-size: 13px; margin-top: 2px; }
 [inert] { opacity: .5; }
 .role.off { background: #fee2e2; color: #b91c1c; }
+
+/* Documentación en carpetas desplegables */
+.docs-results { margin-bottom: 12px; }
+.docs-results h4 { margin: 0 0 6px; font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.docs .flist li.big { padding: 10px 12px; border-color: var(--accent); background: var(--soft); }
+.docs-folders { display: grid; gap: 8px; }
+.dfolder { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.dfolder > summary { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; list-style: none; }
+.dfolder > summary::-webkit-details-marker { display: none; }
+.dfolder > summary::after { content: '▸'; margin-left: auto; color: var(--muted); transition: transform .15s; }
+.dfolder[open] > summary::after { transform: rotate(90deg); }
+.dfolder .flist { padding: 0 10px 10px; max-height: 320px; overflow: auto; }
+.dfolder .flist li { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; padding: 6px 4px; }

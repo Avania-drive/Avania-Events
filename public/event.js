@@ -346,10 +346,16 @@ export async function eventView(id, openTaskId = null) {
   // ── Documentación: archivos de las tareas guardados en la carpeta Documentación (con análisis de los Excel de resultados) ──
   const resultsLink = (e.links || []).find((l) => l.name === 'Archivo de resultados');
   const docsBox = el('div', { class: 'docs' });
+  const openFolders = new Set();
   const drawDocs = () => {
-    const docs = [...(data.event_docs || []).map((f) => ({ ...f, task: f.folder === 'Creatividades' ? 'Creatividades de la acción' : 'De la acción' })), ...tasks.flatMap((t) => (t.files || []).filter((f) => f.folder === 'Documentación').map((f) => ({ ...f, task: t.title })))];
-    docsBox.replaceChildren(docs.length ? el('ul', { class: 'flist' }, docs.map((f) => el('li', {}, icon('clip'), el('a', { href: f.url, target: '_blank', rel: 'noopener' }, f.name), el('small', { class: 'muted' }, f.task),
-      isResultsName(f.name) ? el('button', { class: 'btn small', type: 'button', onclick: () => resultsModal(e, f, () => window.dispatchEvent(new HashChangeEvent('hashchange'))) }, 'Análisis de resultados') : null))) : el('p', { class: 'muted' }, 'Todavía no hay documentos en las tareas de esta acción.'));
+    const all = [...(data.event_docs || []).map((f) => ({ ...f, task: 'De la acción' })), ...tasks.flatMap((t) => (t.files || []).map((f) => ({ ...f, task: t.title })))];
+    const results = all.filter((f) => isResultsName(f.name)), rest = all.filter((f) => !isResultsName(f.name));
+    const row = (f, withTask = true) => el('li', {}, icon('clip'), el('a', { href: f.url, target: '_blank', rel: 'noopener', title: f.name }, f.name), withTask ? el('small', { class: 'muted' }, f.task) : null);
+    const folders = ['Creatividades', 'Documentación', 'Producción'].map((name) => ({ name, files: rest.filter((f) => f.folder === name).sort((x, y) => x.name.localeCompare(y.name, 'es')) })).filter((g) => g.files.length);
+    docsBox.replaceChildren(
+      results.length ? el('div', { class: 'docs-results' }, el('h4', {}, 'Informe de resultados'), el('ul', { class: 'flist' }, results.map((f) => el('li', { class: 'big' }, icon('clip'), el('a', { href: f.url, target: '_blank', rel: 'noopener', title: f.name }, f.name), el('button', { class: 'btn small', type: 'button', onclick: () => resultsModal(e, f, () => window.dispatchEvent(new HashChangeEvent('hashchange'))) }, 'Análisis de resultados'))))) : null,
+      folders.length ? el('div', { class: 'docs-folders' }, folders.map((g) => { const d = el('details', { class: 'dfolder', ontoggle: () => { if (d.open) openFolders.add(g.name); else openFolders.delete(g.name); } }, el('summary', {}, el('span', { class: 'fico' }, '📁'), el('b', {}, g.name), el('span', { class: 'pend-n' }, String(g.files.length))), el('ul', { class: 'flist' }, g.files.map((f) => row(f)))); d.open = openFolders.has(g.name); return d; }))
+        : (results.length ? null : el('p', { class: 'muted' }, 'Todavía no hay documentos en esta acción.')));
   };
   drawDocs();
 
