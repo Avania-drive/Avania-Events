@@ -38,6 +38,15 @@ export function newEventModal(d = {}) {
 // Público objetivo: se elige entre opciones (se pueden marcar varias) y hay un campo «Otro» para lo que no esté en la lista. Se guarda como texto separado por comas.
 const AUDIENCES = ['Familias', 'Niños y niñas', 'Jóvenes', 'Adultos', 'Mujeres', 'Hombres', 'Mayores', 'Público general', 'Clientes del centro', 'Comercios y locales', 'Prensa y medios'];
 
+// Pantalla de espera mientras se copian las piezas y se manda el correo (difumina todo y avisa de que se está enviando)
+function sendingOverlay() {
+  const o = el('div', { class: 'sending', role: 'alertdialog', 'aria-live': 'assertive', 'aria-label': 'Enviando a producción' },
+    el('div', { class: 'sending-box' }, el('strong', {}, 'Enviando a producción'), el('p', {}, 'Estamos copiando las piezas y avisando al proveedor. No cierres esta ventana.'),
+      el('div', { class: 'dots', 'aria-hidden': 'true' }, el('i'), el('i'), el('i'))));
+  document.body.append(o);
+  return o;
+}
+
 // Enviar a producción: se marcan las piezas aprobadas de Creatividades, se elige proveedor y se le manda por correo el enlace a la carpeta Producción
 async function productionModal(e) {
   let d, provs;
@@ -54,10 +63,10 @@ async function productionModal(e) {
     items.map((it) => { const c = el('input', { type: 'checkbox', value: it.id }); checks.push(c); return el('label', { class: 'proditem' }, c, el('a', { href: it.url, target: '_blank', rel: 'noopener', onclick: (ev) => ev.stopPropagation() }, it.name), el('small', { class: 'muted' }, [sizeOf(it.size), it.in_production ? 'ya está en Producción' : ''].filter(Boolean).join(' · '))); }))))
     : el('p', { class: 'muted' }, 'La carpeta de Creatividades está vacía. Sube primero las piezas aprobadas a esa carpeta.');
   const hist = d.sends.length ? el('details', { class: 'prodhist' }, el('summary', {}, `Envíos anteriores (${d.sends.length})`), el('ul', {}, d.sends.map((s) => el('li', {}, `${new Date(s.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · ${s.provider_name} · ${s.files.length} pieza${s.files.length === 1 ? '' : 's'} · por ${s.sender_name}`)))) : null;
-  openModal({ title: 'Enviar a producción', wide: true,
+  const pm = openModal({ title: 'Enviar a producción', wide: true,
     body: el('div', { class: 'fields' },
-      el('p', { class: 'muted wide' }, 'Marca las piezas aprobadas. Se copian a la carpeta «Producción» de esta acción y el proveedor recibe un correo con el enlace. El correo sale a nombre de Elvira Vila, con copia a ella.'),
-      el('div', { class: 'field wide' }, el('div', { class: 'clone-h' }, el('label', {}, 'Piezas de Creatividades'), el('button', { class: 'btn ghost small', type: 'button', onclick: () => checks.forEach((c) => { c.checked = true; }) }, 'Marcar todas'), el('button', { class: 'btn ghost small', type: 'button', onclick: () => checks.forEach((c) => { c.checked = false; }) }, 'Quitar todas')), list),
+      el('div', { class: 'field wide' }, el('p', { class: 'muted', style: { margin: 0 } }, 'Marca las piezas aprobadas. Se copian a la carpeta «Producción» de esta acción y el proveedor recibe un correo con el enlace. El correo sale a nombre de Elvira Vila, con copia a ella.')),
+      el('div', { class: 'field wide' }, el('div', { class: 'clone-h prod-h' }, el('label', {}, 'Piezas de Creatividades'), el('button', { class: 'btn ghost small', type: 'button', onclick: () => checks.forEach((c) => { c.checked = true; }) }, 'Marcar todas'), el('button', { class: 'btn ghost small', type: 'button', onclick: () => checks.forEach((c) => { c.checked = false; }) }, 'Quitar todas')), list),
       field('Proveedor', prov), el('div', { class: 'field wide' }, el('label', {}, 'Mensaje'), message), hist ? el('div', { class: 'field wide' }, hist) : null, el('div', { class: 'field wide' }, err)),
     actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Enviar a producción', keep: true, run: async (ev, close) => {
       err.textContent = '';
@@ -66,9 +75,11 @@ async function productionModal(e) {
       if (!file_ids.length) { err.textContent = 'Marca al menos una pieza'; return false; }
       if (!prov.value) { err.textContent = 'Elige el proveedor'; return false; }
       btn.disabled = true; btn.textContent = 'Enviando…';
-      try { const r = await api('POST', `/api/events/${e.id}/produccion`, { provider_id: prov.value, file_ids, message: message.value }); close(); window.dispatchEvent(new HashChangeEvent('hashchange')); toast(`Enviado a ${r.provider}: ${r.files} pieza${r.files === 1 ? '' : 's'}${r.shared ? '' : ' (no se pudo dar acceso a la carpeta: avísale)'}`); }
-      catch (er) { err.textContent = er.message; btn.disabled = false; btn.textContent = 'Enviar a producción'; return false; }
+      const overlay = sendingOverlay();
+      try { const r = await api('POST', `/api/events/${e.id}/produccion`, { provider_id: prov.value, file_ids, message: message.value }); overlay.remove(); close(); window.dispatchEvent(new HashChangeEvent('hashchange')); toast(`Enviado a ${r.provider}: ${r.files} pieza${r.files === 1 ? '' : 's'}${r.shared ? '' : ' (no se pudo dar acceso a la carpeta: avísale)'}`); }
+      catch (er) { overlay.remove(); err.textContent = er.message; btn.disabled = false; btn.textContent = 'Enviar a producción'; return false; }
     } }] });
+  pm.box.classList.add('prod-modal');
 }
 
 // Clonar una acción a otro año (copia la ficha y las tareas, todas sin hacer y sin importes)
@@ -78,7 +89,7 @@ function cloneModal(e) {
   const year = select(years.map((y) => [String(y), String(y)]), String(e.year + 1), { 'aria-label': 'Año' });
   const name = el('input', { type: 'text', value: e.name, maxlength: 200 });
   const err = el('div', { class: 'err', role: 'alert' });
-  openModal({ title: 'Clonar acción', body: el('div', { class: 'fields' }, el('p', { class: 'muted wide' }, `Se copia «${e.name}» con sus tareas (todas sin hacer, sin importes ni resultados) y las fechas pasan al año que elijas.`), field('¿A qué año la clonamos?', year), field('Nombre', name), el('div', { class: 'field wide' }, err)),
+  openModal({ title: 'Clonar acción', body: el('div', { class: 'fields' }, el('div', { class: 'field wide' }, el('p', { class: 'muted', style: { margin: 0 } }, `Se copia «${e.name}» con sus tareas (todas sin hacer, sin importes ni resultados) y las fechas pasan al año que elijas.`)), field('¿A qué año la clonamos?', year), field('Nombre', name), el('div', { class: 'field wide' }, err)),
     actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Clonar', keep: true, run: async (_e, close) => {
       err.textContent = '';
       try { const r = await api('POST', `/api/events/${e.id}/clone`, { year: Number(year.value), name: name.value }); await loadEvents(); close(); toast(`Creada ${r.event.ref} con ${r.tasks} tareas`); location.hash = `#/evento/${r.event.id}`; }
