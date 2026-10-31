@@ -261,7 +261,7 @@ export async function eventView(id, openTaskId = null) {
         select(Object.entries(state.meta.taskStatus), t.status, { class: 'stsel', 'aria-label': 'Estado de la tarea', style: { '--c': TASK_COLOR[t.status] }, onchange: (ev) => upTask(t, { status: ev.target.value }) }),
         select([['', 'Sin responsable'], ...state.meta.users.map((u) => [u.id, firstName(u)])], t.owner_id || '', { 'aria-label': 'Responsable de la tarea', onchange: (ev) => upTask(t, { owner_id: ev.target.value || null }) }),
         el('input', { type: 'date', value: t.due_on || '', 'aria-label': 'Fecha límite', onchange: (ev) => upTask(t, { due_on: ev.target.value || null }) }),
-        !unlocked ? null : el('input', { type: 'number', min: 0, step: '0.01', placeholder: '€', value: t.cost ?? '', 'aria-label': 'Coste de la tarea', onchange: (ev) => upTask(t, { cost: ev.target.value === '' ? null : ev.target.value }) }),
+        !unlocked ? null : el('label', { class: 'costbox' }, el('input', { type: 'number', min: 0, step: '0.01', placeholder: '0', value: t.cost ?? '', 'aria-label': 'Coste de la tarea en euros', onchange: (ev) => upTask(t, { cost: ev.target.value === '' ? null : ev.target.value }) }), el('span', {}, '€')),
         el('button', { class: `clipbtn${t.files?.length ? ' has' : ''}`, type: 'button', title: t.files?.length ? `${t.files.length} archivo${t.files.length === 1 ? '' : 's'}: pulsa para verlos` : 'Sin archivos: pulsa para añadir', 'aria-label': t.files?.length ? `${t.files.length} archivos` : 'Sin archivos', onclick: () => taskModal(t) }, icon('clip'), t.files?.length ? String(t.files.length) : null),
         el('button', { class: 'btn ghost small more', type: 'button', onclick: () => taskModal(t) }, 'Ampliar tarea')));
   };

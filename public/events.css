@@ -481,3 +481,9 @@ main.auth-card .err { min-height: 18px; }
   .addtask { flex-wrap: wrap; } .addtask input[type=text] { flex: 1 1 100%; min-width: 0; } .addtask select { flex: 1 1 140px; min-width: 0; max-width: none; } .addtask .btn { flex: none; }
 }
 @media (max-width: 860px) { .tabs.seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; } .tabs.seg button { flex: none; white-space: nowrap; } }
+
+/* Importe de la tarea: caja más ancha y el € fuera de la caja */
+.task .tmeta .costbox { display: inline-flex; align-items: center; gap: 4px; }
+.task .tmeta .costbox span { font-weight: 600; color: var(--muted); }
+.task .tmeta .costbox input[type=number], .task .tmeta input[type=number] { width: 112px; text-align: right; }
+.task .tmeta input[type=date] { width: 146px; }
