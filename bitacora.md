@@ -28,3 +28,12 @@
 - **Correo**: SMTP del buzón de Space (el de marketing@ rechazaba la contraseña). Pruebas sin correo real (vaciar SMTP en `test/run.mjs`).
 - **Incidentes**: pruebas ejecutadas contra la base real (dos veces: datos de prueba, correos de prueba); corregido y limpiado. Una vez, concesión de permisos de Drive bloqueada por el sistema y hecha por Pascual.
 - 88 pruebas en memoria (PGlite), todas correctas.
+
+## 31-oct-2026 (tarde) — Registro de actividad, proveedores y producción, traspaso de Notion
+- **Registro de actividad** (Administración → Actividad, sql/007 `audit_log`): accesos (también fallidos), cambios en acciones y tareas, archivos, administración; filtros por persona, tipo, fechas y texto; último acceso de cada persona. No guarda contraseñas ni importes.
+- **Proveedores** (Administración → Proveedores, sql/008): nombre, correo, teléfono y notas. De serie: Top Impresión (topimpresion@gmail.com).
+- **Enviar a producción** (ficha de la acción): checklist de las piezas de Creatividades, proveedor y mensaje; copia las piezas a «Producción», da acceso de lectura a la carpeta al proveedor y le envía el correo con el enlace (a nombre de Elvira Vila, con copia y respuesta a elvira.vila@avania.es). Cada envío queda registrado.
+- **Fotografías**: nueva subcarpeta por acción y galería con arrastrar y soltar (subida en bloque, 3 a la vez).
+- **Traspaso Notion → Drive**: 134 adjuntos → 131 subidos + 3 ya estaban, 0 fallos; 133 enlazados a 98 tareas (81 en Documentación, 52 en Creatividades). Estructura: unidad compartida / Cliente / Año / «REF NOMBRE» / Creatividades · Documentación · Producción · Fotografías.
+- **Tareas tipo** al crear una acción: las variantes del mismo nombre se unen («Velero y A3», «Veleros y A3», «A3 y veleros»…).
+- Tests: ya no tocan Drive, Notion ni correo reales (vaciar variables en `test/run.mjs`); se retiraron 4 carpetas de prueba que un test había creado en Drive. 100 pruebas correctas.
