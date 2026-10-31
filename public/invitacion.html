@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Elegir contraseña · Avania Events</title>
+<link rel="icon" href="/brand/favicon-32.png">
+<link rel="stylesheet" href="/avania-ui.css">
+<link rel="stylesheet" href="/events.css">
+</head>
+<body class="center-page">
+<main class="auth-card card" id="box"><p class="muted">Comprobando el enlace…</p></main>
+<script type="module">
+import { el, api } from '/ui.js';
+const box = document.getElementById('box');
+const token = new URLSearchParams(location.search).get('t') || '';
+const brand = () => el('span', { class: 'brand' }, el('img', { class: 'logo-light', src: '/brand/avania-light.png', alt: 'Avania' }), el('img', { class: 'logo-dark', src: '/brand/avania-dark.png', alt: 'Avania' }), el('b', {}, 'EVENTS'));
+try {
+  const info = await api('GET', `/api/invitacion/${encodeURIComponent(token)}`);
+  const err = el('div', { class: 'err', role: 'alert' });
+  const p1 = el('input', { type: 'password', id: 'p1', autocomplete: 'new-password', minlength: 12, required: true });
+  const p2 = el('input', { type: 'password', id: 'p2', autocomplete: 'new-password', minlength: 12, required: true });
+  const go = el('button', { class: 'btn', type: 'submit' }, 'Guardar y entrar');
+  box.replaceChildren(brand(), el('h1', {}, info.name ? `Hola, ${info.name.split(' ')[0]}` : 'Bienvenido'),
+    el('p', { class: 'muted' }, `Elige la contraseña de ${info.email} (mínimo 12 caracteres).`),
+    el('form', { onsubmit: async (e) => {
+      e.preventDefault(); err.textContent = '';
+      if (p1.value !== p2.value) { err.textContent = 'Las dos contraseñas no coinciden'; return; }
+      go.disabled = true;
+      try { await api('POST', `/api/invitacion/${encodeURIComponent(token)}`, { password: p1.value }); location.href = '/'; }
+      catch (er) { err.textContent = er.message; go.disabled = false; }
+    } }, el('label', { for: 'p1' }, 'Contraseña'), p1, el('label', { for: 'p2' }, 'Repítela'), p2, err, go));
+} catch (e) { box.replaceChildren(brand(), el('h1', {}, 'Enlace no válido'), el('p', { class: 'muted' }, e.message)); }
+</script>
+</body>
+</html>

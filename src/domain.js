@@ -19,7 +19,9 @@ const date = (v, label) => {
 };
 const money = (v, label) => {
   if (v === null || v === '' || v === undefined) return null;
-  const n = Number(String(v).replace(',', '.'));
+  let s = String(v).trim().replace(/[€\s]/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');   // 1.250,50 → 1250.50
+  const n = Number(s);
   if (!Number.isFinite(n) || n < 0 || n > 99_999_999) throw bad(`${label} no es un importe válido`);
   return Math.round(n * 100) / 100;
 };
