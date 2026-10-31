@@ -27,7 +27,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'same-origin');
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   // Las escrituras solo se aceptan como JSON (junto con SameSite=Strict, frena el CSRF).
-  if (req.method !== 'GET' && req.path.startsWith('/api/') && !req.is('application/json') && !(req.headers['x-upload'] === '1' && /^\/api\/tasks\/[^/]+\/files$/.test(req.path)) && Number(req.headers['content-length'] || 0) > 0) return res.status(415).json({ error: 'Solo JSON' });
+  if (req.method !== 'GET' && req.path.startsWith('/api/') && !req.is('application/json') && !(req.headers['x-upload'] === '1' && /^\/api\/(tasks|events)\/[^/]+\/(files|photos)$/.test(req.path)) && Number(req.headers['content-length'] || 0) > 0) return res.status(415).json({ error: 'Solo JSON' });
   next();
 });
 app.use(loadSession);
@@ -197,8 +197,9 @@ app.get('/api/events/:id', ...staff, wrap(async (req, res) => {
     q(`select t.* from tasks t left join task_sections s on s.id = t.section_id where t.event_id = $1 order by s.position nulls last, t.position, t.created_at`, [e.id]),
   ]);
   const files = (await q('select id, task_id, name, folder, drive_file_id, size, created_at from task_files where event_id = $1 order by created_at', [e.id])).rows;
+  const photos = files.filter((f) => !f.task_id).map((f) => ({ id: f.id, name: f.name, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view`, thumb: `https://drive.google.com/thumbnail?id=${f.drive_file_id}&sz=w320` }));
   const withFiles = tasks.rows.map((t) => ({ ...t, files: files.filter((f) => f.task_id === t.id).map((f) => ({ id: f.id, name: f.name, folder: f.folder, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view` })) }));
-  res.json({ event: { ...e, collaborators: collabs.rows.map((r) => r.user_id), drive_url: e.drive_folder_id ? `https://drive.google.com/drive/folders/${e.drive_folder_id}` : null }, tasks: withFiles, drive_enabled: driveEnabled() });
+  res.json({ event: { ...e, collaborators: collabs.rows.map((r) => r.user_id), drive_url: e.drive_folder_id ? `https://drive.google.com/drive/folders/${e.drive_folder_id}` : null }, tasks: withFiles, photos, drive_enabled: driveEnabled() });
 }));
 
 // ───────── Aviso diario de pendientes y tareas tipo para clonar ─────────
@@ -323,6 +324,21 @@ app.post('/api/tasks/:id/files', ...staff, express.raw({ type: '*/*', limit: '60
   await logEvent(t.event_id, req.user, 'archivo subido', { name });
   res.json({ file: { ...row, url: `https://drive.google.com/file/d/${f.id}/view` } });
 }));
+// Fotografías del evento: subida en bloque a la carpeta «Fotografías» de la acción (sin tarea concreta)
+app.post('/api/events/:id/photos', ...staff, express.raw({ type: '*/*', limit: '60mb' }), wrap(async (req, res) => {
+  if (req.headers['x-upload'] !== '1' || !Buffer.isBuffer(req.body) || !req.body.length) throw fail(400, 'No llegó ningún archivo');
+  if (!driveEnabled()) throw fail(503, 'Google Drive no está configurado');
+  if (!isUuid(req.params.id)) throw fail(404, 'No existe esa acción');
+  const e = (await q('select id, ref, name, year, client_id, drive_folder_id from events where id = $1', [req.params.id])).rows[0];
+  if (!e) throw fail(404, 'No existe esa acción');
+  const root = await ensureEventFolder(e);
+  if (!root) throw fail(503, 'No hay carpeta de Drive para esta acción');
+  const name = cleanName(decodeURIComponent(String(req.query.name || 'foto')));
+  const f = await uploadFile(await ensureFolder(root, 'Fotografías'), name, req.body, req.headers['content-type']?.split(';')[0] || 'application/octet-stream');
+  const row = (await q(`insert into task_files (task_id, event_id, name, folder, drive_file_id, size, mime, created_by) values (null,$1,$2,'Fotografías',$3,$4,$5,$6) on conflict (event_id, drive_file_id) where task_id is null do update set name = excluded.name returning id, name, size`, [e.id, name, f.id, req.body.length, req.headers['content-type'] || '', req.user.id])).rows[0];
+  res.json({ photo: { ...row, url: `https://drive.google.com/file/d/${f.id}/view`, thumb: `https://drive.google.com/thumbnail?id=${f.id}&sz=w320` } });
+}));
+
 app.delete('/api/task-files/:id', ...staff, wrap(async (req, res) => {   // solo quita el vínculo con la tarea; el archivo sigue en Drive
   if (!isUuid(req.params.id)) throw fail(404, 'No existe ese archivo');
   const r = await q('delete from task_files where id = $1 returning event_id, name', [req.params.id]);

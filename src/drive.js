@@ -51,7 +51,7 @@ export async function uploadFile(parentId, name, data, mime = 'application/octet
 /** Manda a la papelera una carpeta (recuperable desde Drive). */
 export const trashFile = (id) => call('PATCH', `/files/${id}`, { params: { fields: 'id' }, body: { trashed: true } });
 /** Subcarpetas que lleva cada acción. */
-export const ACTION_SUBFOLDERS = ['Creatividades', 'Documentación', 'Producción'];
+export const ACTION_SUBFOLDERS = ['Creatividades', 'Documentación', 'Producción', 'Fotografías'];
 
 /** Mueve una carpeta a otra (cambia su carpeta padre). */
 export async function moveTo(id, newParentId) {

@@ -68,6 +68,7 @@ export async function eventView(id, openTaskId = null) {
   const data = await api('GET', `/api/events/${id}`);
   let e = data.event, tasks = data.tasks;
   const unlocked = Boolean(data.costs_unlocked);
+  let photos = data.photos || [];
   let log = (await api('GET', `/api/events/${id}/log`)).log;
   const client = clientOf(e.client_id);
   const saved = el('span', { class: 'saved', role: 'status' });
@@ -216,6 +217,39 @@ export async function eventView(id, openTaskId = null) {
   };
   drawAud();
 
+  // ── Fotografías del evento: arrastrar y soltar en bloque ──
+  const photosBox = el('div', { class: 'photos' });
+  async function uploadPhotos(fileList) {
+    const files = [...fileList].filter((f) => f.size > 0); if (!files.length) return;
+    let done = 0, failed = 0; const msg = photosBox.querySelector('.pmsg');
+    const one = async (file) => {
+      try {
+        const r = await fetch(`/api/events/${id}/photos?name=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { 'X-Upload': '1', 'Content-Type': file.type || 'application/octet-stream' }, body: file, credentials: 'same-origin' });
+        const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+        photos = [...photos.filter((x) => x.id !== j.photo.id), j.photo];
+      } catch (er) { failed++; toast(`${file.name}: ${er.message}`, true); }
+      done++; if (msg) msg.textContent = `Subiendo ${done} de ${files.length}…`;
+    };
+    const queue = [...files];   // 3 subidas a la vez
+    await Promise.all([0, 1, 2].map(async () => { while (queue.length) await one(queue.shift()); }));
+    toast(failed ? `${files.length - failed} fotos subidas, ${failed} con fallo` : `${files.length} foto${files.length === 1 ? '' : 's'} subida${files.length === 1 ? '' : 's'}`, Boolean(failed));
+    drawPhotos();
+  }
+  function drawPhotos() {
+    const pick = el('input', { type: 'file', multiple: true, accept: 'image/*,video/*', hidden: true, onchange: (ev) => uploadPhotos(ev.target.files) });
+    const zone = el('div', { class: 'dropzone', tabindex: 0, role: 'button', 'aria-label': 'Soltar fotos aquí o pulsar para elegirlas',
+      onclick: () => pick.click(), onkeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick.click(); } },
+      ondragover: (ev) => { ev.preventDefault(); zone.classList.add('over'); }, ondragleave: () => zone.classList.remove('over'),
+      ondrop: (ev) => { ev.preventDefault(); zone.classList.remove('over'); uploadPhotos(ev.dataTransfer.files); } },
+      icon('clip'), el('strong', {}, 'Arrastra aquí las fotos y vídeos del evento'), el('span', { class: 'muted' }, 'o pulsa para elegirlos. Se pueden subir muchos a la vez.'), el('span', { class: 'pmsg muted' }), pick);
+    photosBox.replaceChildren(
+      data.drive_enabled ? zone : el('p', { class: 'muted' }, 'Google Drive no está configurado en el servidor.'),
+      photos.length ? el('div', { class: 'pgrid' }, photos.map((f) => el('a', { class: 'pthumb', href: f.url, target: '_blank', rel: 'noopener', title: f.name },
+        el('img', { src: f.thumb, alt: f.name, loading: 'lazy', onerror: (ev) => { ev.target.replaceWith(el('span', { class: 'pfallback' }, f.name)); } }),
+        el('button', { class: 'pdel', type: 'button', 'aria-label': `Quitar ${f.name}`, onclick: async (ev) => { ev.preventDefault(); ev.stopPropagation(); if (!(await confirmBox('Quitar foto', `¿Quitar «${f.name}» de la galería? El archivo se queda en Drive.`, 'Quitar'))) return; try { await api('DELETE', `/api/task-files/${f.id}`); photos = photos.filter((x) => x.id !== f.id); drawPhotos(); } catch (er) { toast(er.message, true); } } }, '✕')))) : el('p', { class: 'muted' }, 'Todavía no hay fotografías de este evento.'));
+  }
+  drawPhotos();
+
   // ── Valoración ──
   const stars = el('div', { class: 'stars', role: 'group', 'aria-label': 'Valoración de 1 a 5' });
   const drawStars = () => stars.replaceChildren(...[1, 2, 3, 4, 5].map((n) => el('button', { type: 'button', class: n <= (e.rating || 0) ? 'on' : '', 'aria-label': `${n} de 5`, 'aria-pressed': String(n === e.rating), onclick: () => { set('rating', e.rating === n ? null : n); drawStars(); } }, icon('star'))));
@@ -267,6 +301,7 @@ export async function eventView(id, openTaskId = null) {
           field('Valoración (1 a 5)', stars),
           area('kpi_result', 'Resultado / KPI', 'wide', 3), area('sponsors', 'Patrocinadores', 'wide', 2), area('incidents', 'Incidencias', 'wide', 3), area('improvements', 'Qué mejorar la próxima vez', 'wide', 3),
           el('div', { class: 'field wide note-next' }, el('label', {}, 'Notas para el año que viene'), el('textarea', { rows: 4, oninput: (ev) => set('notes_next', ev.target.value) }, e.notes_next ?? '')))),
+        el('section', { class: 'card sec' }, el('h3', {}, 'Fotografías', el('small', { class: 'muted' }, 'recopilatorio del evento')), photosBox),
         el('section', { class: 'card sec' }, el('h3', {}, 'Enlaces y archivos', el('small', { class: 'muted' }, 'carpetas de Drive, bases legales, informes…')), e.drive_url ? el('p', {}, el('a', { class: 'btn ghost small', href: e.drive_url, target: '_blank', rel: 'noopener' }, icon('clip'), 'Abrir la carpeta de esta acción en Drive')) : null, linksBox)),
       el('aside', { class: 'side' },
         el('section', { class: 'card sec' }, el('h3', {}, 'Resumen'), summaryBox, e.notion_url ? el('p', {}, el('a', { href: e.notion_url, target: '_blank', rel: 'noopener', class: 'muted' }, 'Ver la ficha original en Notion')) : null),
