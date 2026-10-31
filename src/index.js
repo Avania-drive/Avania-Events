@@ -201,11 +201,11 @@ app.get('/api/events/:id', ...staff, wrap(async (req, res) => {
     q(`select t.* from tasks t left join task_sections s on s.id = t.section_id where t.event_id = $1 order by s.position nulls last, t.position, t.created_at`, [e.id]),
   ]);
   const files = (await q('select id, task_id, name, folder, drive_file_id, size, created_at from task_files where event_id = $1 order by created_at', [e.id])).rows;
-  const photos = files.filter((f) => !f.task_id).map((f) => ({ id: f.id, name: f.name, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view`, thumb: `https://drive.google.com/thumbnail?id=${f.drive_file_id}&sz=w320` }));
+  const photos = files.filter((f) => !f.task_id && f.folder === 'Fotografías').map((f) => ({ id: f.id, name: f.name, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view`, thumb: `https://drive.google.com/thumbnail?id=${f.drive_file_id}&sz=w320` }));
   const sends = (await q("select file_ids, to_char(created_at at time zone 'Europe/Madrid', 'YYYY-MM-DD') sent_day, provider_name from production_sends where event_id = $1 order by created_at desc", [e.id])).rows;
   const sentInfo = (t) => { const mine = new Set(files.filter((f) => f.task_id === t.id).map((f) => f.drive_file_id)); const hit = sends.find((x) => (x.file_ids || []).some((id) => mine.has(id))); return hit ? { date: hit.sent_day, provider: hit.provider_name } : null; };
   const withFiles = tasks.rows.map((t) => ({ ...t, sent_to_production: sentInfo(t), files: files.filter((f) => f.task_id === t.id).map((f) => ({ id: f.id, name: f.name, folder: f.folder, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view` })) }));
-  res.json({ event: { ...e, collaborators: collabs.rows.map((r) => r.user_id), drive_url: e.drive_folder_id ? `https://drive.google.com/drive/folders/${e.drive_folder_id}` : null }, tasks: withFiles, photos, drive_enabled: driveEnabled() });
+  res.json({ event: { ...e, collaborators: collabs.rows.map((r) => r.user_id), drive_url: e.drive_folder_id ? `https://drive.google.com/drive/folders/${e.drive_folder_id}` : null }, tasks: withFiles, photos, event_docs: files.filter((f) => !f.task_id && f.folder !== 'Fotografías').map((f) => ({ id: f.id, name: f.name, folder: f.folder, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view` })), drive_enabled: driveEnabled() });
 }));
 
 // ───────── Aviso diario de pendientes y tareas tipo para clonar ─────────

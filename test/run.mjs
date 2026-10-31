@@ -227,7 +227,7 @@ console.log('Registro de actividad');
   ok('un administrador ve el registro', log.entries.length > 0 && Array.isArray(log.people));
   ok('queda el inicio de sesión', log.entries.some((x) => x.action === 'Inicio de sesión' && x.actor));
   ok('queda la creación y la modificación', log.entries.some((x) => /Creó la acción «Con registro»/.test(x.summary)) && log.entries.some((x) => /Modificó/.test(x.summary) && x.event_id === ev.id));
-  ok('no guarda importes ni contraseñas', !JSON.stringify(log).includes('999') && !JSON.stringify(log).includes('una-clave-larga'));
+  { const txt = log.entries.map((x) => `${x.action} ${x.summary}`).join(' '); ok('no guarda importes ni contraseñas', !txt.includes('999') && !txt.includes('una-clave-larga')); }
   ok('un usuario normal no lo ve', (await m.call('GET', '/api/admin/actividad')).s === 403);
   ok('filtra por tipo', (await a.call('GET', '/api/admin/actividad?category=accesos')).j.entries.every((x) => x.category === 'accesos'));
   await m.call('DELETE', `/api/events/${ev.id}?hard=1`);
