@@ -14,7 +14,8 @@ export const sectionOf = (id) => state.meta.sections.find((s) => s.id === id);
 
 export async function loadMeta() { state.meta = await api('GET', '/api/meta'); state.me = state.meta.me; }
 export async function loadEvents() {
-  state.events = (await api('GET', '/api/events')).events;
+  const r = await api('GET', '/api/events');
+  state.events = r.events; state.costsUnlocked = Boolean(r.costs_unlocked);
   bus.dispatchEvent(new Event('events'));
 }
 export const visibleEvents = () => state.events.filter((e) => !state.client || e.client_id === state.client);

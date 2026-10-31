@@ -25,7 +25,11 @@ class Client {
 }
 const mkUser = async (email, role, pw = 'una-clave-larga-123', must = false) => q('insert into team_users (email, name, role, password_hash, must_change_password) values ($1,$2,$3,$4,$5) returning id', [email, email.split('@')[0], role, hashPassword(pw), must]);
 await mkUser('super@avania.es', 'super_admin'); await mkUser('admin@avania.es', 'admin'); await mkUser('ana@avania.es', 'member'); await mkUser('nueva@avania.es', 'member', 'temporal-123456', true);
-const login = async (email, pw = 'una-clave-larga-123') => { const c = new Client(); const r = await c.call('POST', '/api/login', { email, password: pw }); return { c, r }; };
+const login = async (email, pw = 'una-clave-larga-123', locked = false) => {
+  const c = new Client(); const r = await c.call('POST', '/api/login', { email, password: pw });
+  if (!locked && r.s === 200 && !r.j.user?.must_change_password) await c.call('POST', '/api/informes/acceso', { email, password: pw });   // la mayoría de pruebas trabajan con los importes a la vista
+  return { c, r };
+};
 
 console.log('Acceso');
 ok('sin sesión no entra', (await new Client().call('GET', '/api/meta')).s === 401);
@@ -147,15 +151,34 @@ ok('ya entra con su clave', (await login('luis@avania.es', 'mi-clave-nueva-123')
 
 console.log('Informes con usuario y contraseña');
 {
-  const c = (await login('ana@avania.es')).c;
+  const c = (await login('ana@avania.es', undefined, true)).c;
   ok('informes cerrados al entrar', (await c.call('GET', '/api/informes')).s === 403 && (await c.call('GET', '/api/informes/estado')).j.unlocked === false);
   ok('contraseña mala → 401', (await c.call('POST', '/api/informes/acceso', { email: 'ana@avania.es', password: 'mala' })).s === 401);
   ok('usuario de otra persona → 401', (await c.call('POST', '/api/informes/acceso', { email: 'admin@avania.es', password: 'una-clave-larga-123' })).s === 401);
   ok('con usuario y contraseña se abren', (await c.call('POST', '/api/informes/acceso', { email: 'ANA@avania.es', password: 'una-clave-larga-123' })).j.unlocked === true);
   ok('ya devuelve las acciones con importes', Array.isArray((await c.call('GET', '/api/informes')).j.events));
-  ok('otra sesión sigue cerrada', (await (await login('ana@avania.es')).c.call('GET', '/api/informes')).s === 403);
+  ok('otra sesión sigue cerrada', (await (await login('ana@avania.es', undefined, true)).c.call('GET', '/api/informes')).s === 403);
   await c.call('POST', '/api/informes/bloquear');
   ok('se pueden volver a bloquear', (await c.call('GET', '/api/informes')).s === 403);
+}
+
+
+console.log('Importes ocultos hasta desbloquear');
+{
+  const open = (await login('ana@avania.es')).c;
+  const ev = (await open.call('GET', '/api/events')).j.events.find((e) => e.cost != null) || (await open.call('GET', '/api/events')).j.events[0];
+  await open.call('PATCH', `/api/events/${ev.id}`, { cost: 123.45 });
+  const locked = (await login('ana@avania.es', undefined, true)).c;
+  const lst = (await locked.call('GET', '/api/events')).j;
+  ok('la lista sale sin importes', lst.costs_unlocked === false && lst.events.every((e) => e.cost === null && e.tasks_cost === null));
+  const det = (await locked.call('GET', `/api/events/${ev.id}`)).j;
+  ok('la ficha sale sin importes', det.event.cost === null && det.tasks.every((t) => t.cost === null));
+  const dash = (await locked.call('GET', '/api/dashboard')).j;
+  ok('el inicio no trae importes', dash.counts.por_facturar_importe === null && dash.counts.coste_anio === null);
+  ok('no deja cambiar importes bloqueado', (await locked.call('PATCH', `/api/events/${ev.id}`, { cost: 1 })).s === 403);
+  ok('sí deja cambiar otras cosas', (await locked.call('PATCH', `/api/events/${ev.id}`, { description: 'x' })).s === 200);
+  const again = (await open.call('GET', `/api/events/${ev.id}`)).j;
+  ok('con la sesión desbloqueada se ven', again.costs_unlocked === true && again.event.cost === 123.45);
 }
 
 console.log('Salud');

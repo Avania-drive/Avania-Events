@@ -31,6 +31,23 @@ app.use((req, res, next) => {
 });
 app.use(loadSession);
 
+// Los importes solo se ven con la sesión desbloqueada (usuario y contraseña en Informes, 30 min): fuera de ahí se vacían en las respuestas y no se aceptan cambios de importes.
+const costsOpen = (req) => Boolean(req.session?.reports_until && new Date(req.session.reports_until) > new Date());
+const MONEY_KEYS = new Set(['cost', 'tasks_cost', 'por_facturar_importe', 'coste_anio']);
+const hideMoney = (x) => {
+  if (Array.isArray(x)) return x.map(hideMoney);
+  if (x && typeof x === 'object' && !(x instanceof Date)) { const o = {}; for (const [k, v] of Object.entries(x)) o[k] = MONEY_KEYS.has(k) ? null : hideMoney(v); if (o.detail && typeof o.detail === 'object') delete o.detail.cost; return o; }
+  return x;
+};
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api/') || req.path.startsWith('/api/informes') || !req.user) return next();
+  const open = costsOpen(req);
+  if (!open && ['POST', 'PATCH', 'PUT'].includes(req.method) && req.body && typeof req.body === 'object' && 'cost' in req.body) return res.status(403).json({ error: 'Los importes están ocultos: desbloquéalos con tu usuario y contraseña', code: 'reports_locked' });
+  const json = res.json.bind(res);
+  res.json = (body) => json(body && typeof body === 'object' ? { ...(open ? body : hideMoney(body)), costs_unlocked: open } : body);
+  next();
+});
+
 const staff = [requireUser, requireReady];
 const admins = [...staff, requireRole('super_admin', 'admin')];
 

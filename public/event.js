@@ -1,5 +1,6 @@
 // Ficha de una acción: datos, tareas por sección, briefing, cierre post-evento, enlaces y actividad. Todo se guarda solo.
 import { el, api, icon, field, select, toast, openModal, confirmBox, initials, fmtDate, fmtMoney, fmtDateLong, debounce, STATUS_COLOR, TASK_COLOR, statusBadge, today, firstName } from './ui.js';
+import { lockedChip } from './unlock.js';
 import { state, bus, clientOf, typeOf, userOf, sectionOf, loadEvents } from './state.js';
 
 // ───────── Nueva acción ─────────
@@ -42,6 +43,7 @@ function logText(l) {
 export async function eventView(id) {
   const data = await api('GET', `/api/events/${id}`);
   let e = data.event, tasks = data.tasks;
+  const unlocked = Boolean(data.costs_unlocked);
   let log = (await api('GET', `/api/events/${id}/log`)).log;
   const client = clientOf(e.client_id);
   const saved = el('span', { class: 'saved', role: 'status' });
@@ -98,7 +100,7 @@ export async function eventView(id) {
         select(Object.entries(state.meta.taskStatus), t.status, { class: 'stsel', 'aria-label': 'Estado de la tarea', style: { '--c': TASK_COLOR[t.status] }, onchange: (ev) => upTask(t, { status: ev.target.value }) }),
         select([['', 'Sin responsable'], ...state.meta.users.map((u) => [u.id, firstName(u)])], t.owner_id || '', { 'aria-label': 'Responsable de la tarea', onchange: (ev) => upTask(t, { owner_id: ev.target.value || null }) }),
         el('input', { type: 'date', value: t.due_on || '', 'aria-label': 'Fecha límite', onchange: (ev) => upTask(t, { due_on: ev.target.value || null }) }),
-        el('input', { type: 'number', min: 0, step: '0.01', placeholder: '€', value: t.cost ?? '', 'aria-label': 'Coste de la tarea', onchange: (ev) => upTask(t, { cost: ev.target.value === '' ? null : ev.target.value }) }),
+        !unlocked ? null : el('input', { type: 'number', min: 0, step: '0.01', placeholder: '€', value: t.cost ?? '', 'aria-label': 'Coste de la tarea', onchange: (ev) => upTask(t, { cost: ev.target.value === '' ? null : ev.target.value }) }),
         el('button', { class: 'btn ghost small more', type: 'button', onclick: () => taskModal(t) }, 'Ampliar tarea')));
   };
   function drawTasks() {
@@ -177,7 +179,7 @@ export async function eventView(id) {
     const tcost = l.reduce((n, t) => n + (t.cost || 0), 0);
     const row = (k, v) => [el('dt', {}, k), el('dd', {}, v)];
     summaryBox.replaceChildren(...row('Estado', statusBadge(state.meta.eventStatus[e.status], STATUS_COLOR[e.status])), ...row('Tareas hechas', `${done} de ${l.length}`), ...row('Tareas vencidas', String(late)),
-      ...row('Coste de la acción', e.cost != null ? fmtMoney(e.cost) : '—'), ...row('Coste de las tareas', tcost ? fmtMoney(tcost) : '—'), ...row('Facturado', e.invoiced ? 'Sí' : 'No'));
+      ...row('Coste de la acción', !unlocked ? lockedChip() : e.cost != null ? fmtMoney(e.cost) : '—'), ...row('Coste de las tareas', !unlocked ? lockedChip() : tcost ? fmtMoney(tcost) : '—'), ...row('Facturado', e.invoiced ? 'Sí' : 'No'));
   }
   async function refreshLog() {
     try { log = (await api('GET', `/api/events/${id}/log`)).log; } catch { /* se queda lo que había */ }
@@ -201,7 +203,7 @@ export async function eventView(id) {
           field('Responsable', select([['', 'Sin responsable'], ...state.meta.users.map((u) => [u.id, u.name || u.email])], e.owner_id || '', { onchange: (ev) => set('owner_id', ev.target.value || null) })),
           dateIn('starts_on', 'Inicio'), dateIn('ends_on', 'Fin'), field('Año', yearIn),
           field('Ubicación', el('input', { type: 'text', list: 'locs', value: e.location || '', maxlength: 120, oninput: (ev) => set('location', ev.target.value) })),
-          field('Coste de la acción (€)', el('input', { type: 'text', inputmode: 'decimal', value: e.cost ?? '', placeholder: '0', onchange: (ev) => set('cost', ev.target.value === '' ? null : ev.target.value) })),
+          field('Coste de la acción (€)', !unlocked ? lockedChip() : el('input', { type: 'text', inputmode: 'decimal', value: e.cost ?? '', placeholder: '0', onchange: (ev) => set('cost', ev.target.value === '' ? null : ev.target.value) })),
           field('Facturación', el('label', { class: 'av-switch' }, el('input', { type: 'checkbox', checked: e.invoiced, onchange: (ev) => set('invoiced', ev.target.checked) }), el('i'), 'Facturada')),
           el('div', { class: 'field wide' }, el('label', {}, 'Colaboradores'), collabBox)),
           el('datalist', { id: 'locs' }, state.meta.locations.map((l) => el('option', { value: l })))),

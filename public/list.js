@@ -1,5 +1,6 @@
 // Vista de un año o de un tipo de acción: lista (por meses), tablero por estado y cronograma.
 import { el, api, icon, select, fmtRange, fmtMoney, initials, STATUS_COLOR, today, parseDay, monthName, toast, statusBadge, debounce } from './ui.js';
+import { lockedChip } from './unlock.js';
 import { state, clientOf, typeOf, userOf, queryClient, loadEvents } from './state.js';
 
 const MODE_KEY = 'ev_mode';
@@ -18,7 +19,8 @@ export async function listView(scope) {
   const type = scope.type ? typeOf(scope.type) : null;
   if (!byYear && !type) throw Object.assign(new Error('Ese tipo de acción no existe'), { status: 404 });
   const url = `/api/events?${byYear ? `year=${scope.year}` : `type=${scope.type}`}${queryClient()}`;
-  let events = (await api('GET', url)).events;
+  const res = await api('GET', url);
+  let events = res.events; const unlocked = Boolean(res.costs_unlocked);
   const f = { search: '', status: '', owner: '', type: '' };
   let mode = getMode();
   if (!byYear && mode === 'cronograma') mode = 'cajas';
@@ -57,7 +59,7 @@ export async function listView(scope) {
       ...groups.get(k).map((e) => el('tr', { class: 'ev', tabindex: 0, onclick: () => (location.hash = `#/evento/${e.id}`), onkeydown: (ev) => ev.key === 'Enter' && (location.hash = `#/evento/${e.id}`) },
         el('td', { class: 'nm' }, el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } }, el('span', { class: 'ref' }, e.ref), cliChip(e), el('strong', {}, e.name), typeChip(e))),
         el('td', {}, fmtRange(e.starts_on, e.ends_on)), el('td', {}, stBadge(e)), el('td', {}, ownerCell(e.owner_id)), el('td', {}, progress(e)),
-        el('td', { class: 'num' }, e.cost != null ? fmtMoney(e.cost) : el('span', { class: 'muted' }, '—')), el('td', {}, e.invoiced ? el('span', { class: 'yes' }, 'Facturado') : el('span', { class: 'muted' }, e.status === 'terminado' && e.cost ? 'Sin facturar' : '—'))))]);
+        el('td', { class: 'num' }, !unlocked ? lockedChip() : e.cost != null ? fmtMoney(e.cost) : el('span', { class: 'muted' }, '—')), el('td', {}, e.invoiced ? el('span', { class: 'yes' }, 'Facturado') : el('span', { class: 'muted' }, e.status === 'terminado' ? 'Sin facturar' : '—'))))]);
     return el('div', { class: 'card table-wrap' }, el('table', { class: 't' }, el('thead', {}, el('tr', {}, ['Acción', 'Fechas', 'Estado', 'Responsable', 'Tareas', 'Coste', 'Factura'].map((h, i) => (h === 'Fechas'
       ? el('th', { 'aria-sort': dateDir === 'asc' ? 'ascending' : 'descending' }, el('button', { class: 'sortbtn', type: 'button', title: dateDir === 'asc' ? 'Ahora: de la más temprana a la más tardía. Pulsa para invertir.' : 'Ahora: de la más tardía a la más temprana. Pulsa para invertir.', onclick: () => { dateDir = dateDir === 'asc' ? 'desc' : 'asc'; draw(); } }, 'Fechas', el('span', { class: 'arr', 'aria-hidden': 'true' }, dateDir === 'asc' ? '▲' : '▼')))
       : el('th', { class: i === 5 ? 'num' : '' }, h))))), el('tbody', {}, rows)));
@@ -91,7 +93,7 @@ export async function listView(scope) {
       el('h4', {}, el('i', { class: 'dot', style: { width: '8px', height: '8px', borderRadius: '50%', background: STATUS_COLOR[key] } }), label, el('small', { class: 'muted' }, String(cards.length))),
         cards.map((e) => el('a', { class: 'card bcard', href: `#/evento/${e.id}`, draggable: 'true', ondragstart: (ev) => ev.dataTransfer.setData('text/plain', e.id) },
           el('div', { class: 'top' }, el('span', { class: 'ref' }, e.ref), cliChip(e), typeChip(e)), el('div', { class: 'nm' }, e.name),
-          el('div', { class: 'meta' }, el('span', {}, fmtRange(e.starts_on, e.ends_on)), e.owner_id ? ownerCell(e.owner_id) : null, e.cost != null ? el('span', {}, fmtMoney(e.cost)) : null), progress(e))));
+          el('div', { class: 'meta' }, el('span', {}, fmtRange(e.starts_on, e.ends_on)), e.owner_id ? ownerCell(e.owner_id) : null, unlocked && e.cost != null ? el('span', {}, fmtMoney(e.cost)) : null), progress(e))));
       return col;
     });
     return el('div', { class: 'board' }, cols);
