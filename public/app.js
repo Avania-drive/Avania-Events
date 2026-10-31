@@ -4,10 +4,12 @@ import { dashboardView } from './dashboard.js';
 import { listView } from './list.js';
 import { eventView, newEventModal } from './event.js';
 import { adminView } from './admin.js';
-import { maybeShowPending } from './pendientes.js';
+import { maybeShowPending, refreshPending, openPendingModal } from './pendientes.js';
 import { informesView } from './informes.js';
 
 const app = document.getElementById('app');
+const pendMine = () => { try { return localStorage.getItem('ev_pend_mine') === '1'; } catch { return false; } };
+const setPendMine = (v) => { try { localStorage.setItem('ev_pend_mine', v ? '1' : '0'); } catch { /* sin almacenamiento */ } };
 const ROLE = { super_admin: 'Superadministrador', admin: 'Administrador', member: 'Equipo' };
 const openYears = new Set();
 let main, side, token = 0;
@@ -72,6 +74,14 @@ function renderSide() {
       icon('cal'), el('span', {}, String(y)), el('small', { class: 'cnt' }, String(list.length)))];
     return items;
   });
+  // Pendientes: siempre a mano en el menú, para ir resolviendo tareas sin buscarlas
+  const pd = state.pending, mineOnly = pendMine();
+  const pl = pd ? pd.tasks.filter((t) => !mineOnly || t.owner_id === state.me.id) : [];
+  const pendBlock = pd ? el('div', { class: 'av-pend' },
+    el('div', { class: 'av-group pend-head' }, 'Pendientes', el('span', { class: `pend-n${pl.some((t) => t.overdue) ? ' hot' : ''}` }, String(pl.length)),
+      el('button', { type: 'button', class: 'pend-tog', title: mineOnly ? 'Mostrando solo las mías: pulsa para ver todas' : 'Mostrando todas: pulsa para ver solo las mías', onclick: () => { setPendMine(!mineOnly); renderSide(); } }, mineOnly ? 'Mías' : 'Todas')),
+    pl.length ? el('ul', { class: 'pend-mini' }, pl.slice(0, 8).map((t) => el('li', { class: t.overdue ? 'late' : '' }, el('a', { href: `#/evento/${t.event_id}?t=${t.id}`, title: `${t.ref} · ${t.event_name}` }, el('small', {}, t.ref), t.title)))) : el('p', { class: 'pend-none' }, mineOnly ? 'No tienes tareas asignadas pendientes.' : 'Todo al día.'),
+    (pl.length > 8 || pd.toInvoice.length) ? el('button', { type: 'button', class: 'pend-all', onclick: () => openPendingModal(pd) }, pl.length > 8 ? `Ver todas (${pl.length})` : 'Ver pendientes', pd.toInvoice.length ? ` · ${pd.toInvoice.length} sin facturar` : '') : null) : null;
   const clientSel = el('select', { class: 'client', 'aria-label': 'Cliente', onchange: (e) => setClient(e.target.value) },
     el('option', { value: '' }, 'Todos los clientes'), state.meta.clients.filter((c) => !c.archived).map((c) => el('option', { value: c.id, selected: state.client === c.id }, c.name)));
   side.replaceChildren(
@@ -81,7 +91,8 @@ function renderSide() {
     nav('#/', 'Inicio', icon('home'), route.name === 'inicio' ? 'on' : ''),
     nav('#/informes', 'Informes', icon('doc'), route.name === 'informes' ? 'on' : ''),
     el('div', { class: 'av-group' }, 'Años'), ...yearBlock,
-        el('div', { class: 'av-grow' }),
+        pendBlock,
+    el('div', { class: 'av-grow' }),
     el('div', { class: 'av-sep' }),
     state.me.is_admin ? nav('#/admin/equipo', 'Administración', icon('gear'), route.name === 'admin' ? 'on' : '') : null,
     el('button', { class: 'av-nav', type: 'button', onclick: logout }, icon('out'), el('span', {}, 'Salir')));
@@ -142,7 +153,8 @@ export async function boot() {
   maybeShowPending();
 }
 window.addEventListener('hashchange', route);
-bus.addEventListener('events', () => renderSide());
+bus.addEventListener('events', () => { renderSide(); refreshPending(); });
+bus.addEventListener('pending', () => renderSide());
 bus.addEventListener('refresh', () => route());
 bus.addEventListener('client', () => { renderSide(); route(); });
 window.addEventListener('ev:new', (e) => newEventModal(e.detail));
