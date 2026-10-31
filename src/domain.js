@@ -56,6 +56,7 @@ export function cleanEvent(b, { partial = false } = {}) {
   set('location', (v) => optText(v, 120, 'La ubicación'));
   set('description', (v) => text(v, 20000, 'La descripción'));
   set('cost', (v) => money(v, 'El coste'));
+  set('budget', (v) => money(v, 'El presupuesto'));
   set('invoiced', (v) => v === true || v === 'true' || v === 1);
   set('objective', (v) => text(v, 5000, 'El objetivo'));
   set('audience', (v) => text(v, 5000, 'El público'));

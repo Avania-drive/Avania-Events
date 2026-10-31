@@ -99,12 +99,13 @@ ok('filtro con id raro → 400', (await ana.call('GET', '/api/events?type=zzz'))
 
 console.log('Panel de inicio');
 await ana.call('PATCH', `/api/events/${ev2.id}`, { status: 'terminado', rating: 4 });
-await ana.call('PATCH', `/api/events/${ev2.id}`, { invoiced: false });
+await ana.call('PATCH', `/api/events/${ev2.id}`, { invoiced: false, budget: 4631 });
 await ana.call('PATCH', `/api/tasks/${t2.id}`, { due_on: '2020-01-01', owner_id: anaId });
 r = (await ana.call('GET', '/api/dashboard')).j;
 ok('cuenta lo pendiente de facturar', r.counts.por_facturar === 1 && r.counts.por_facturar_importe === 4631, JSON.stringify(r.counts));
 ok('cuenta tareas vencidas y las tuyas', r.counts.tareas_vencidas === 1 && r.myTasks.some((t) => t.id === t2.id && t.overdue === true));
 ok('lista lo pendiente de facturar', r.toInvoice.length === 1 && r.toInvoice[0].id === ev2.id);
+ok('guarda el presupuesto a cliente', (await ana.call('GET', `/api/events/${ev2.id}`)).j.event.budget === 4631);
 
 console.log('Archivar y borrar');
 ok('archivar', (await ana.call('DELETE', `/api/events/${ev2.id}`)).j.ok === true);
@@ -167,15 +168,15 @@ console.log('Importes ocultos hasta desbloquear');
 {
   const open = (await login('ana@avania.es')).c;
   const ev = (await open.call('GET', '/api/events')).j.events.find((e) => e.cost != null) || (await open.call('GET', '/api/events')).j.events[0];
-  await open.call('PATCH', `/api/events/${ev.id}`, { cost: 123.45 });
+  await open.call('PATCH', `/api/events/${ev.id}`, { cost: 123.45, budget: 777 });
   const locked = (await login('ana@avania.es', undefined, true)).c;
   const lst = (await locked.call('GET', '/api/events')).j;
   ok('la lista sale sin importes', lst.costs_unlocked === false && lst.events.every((e) => e.cost === null && e.tasks_cost === null));
   const det = (await locked.call('GET', `/api/events/${ev.id}`)).j;
-  ok('la ficha sale sin importes', det.event.cost === null && det.tasks.every((t) => t.cost === null));
+  ok('la ficha sale sin importes', det.event.cost === null && det.event.budget === null && det.tasks.every((t) => t.cost === null));
   const dash = (await locked.call('GET', '/api/dashboard')).j;
   ok('el inicio no trae importes', dash.counts.por_facturar_importe === null && dash.counts.coste_anio === null);
-  ok('no deja cambiar importes bloqueado', (await locked.call('PATCH', `/api/events/${ev.id}`, { cost: 1 })).s === 403);
+  ok('no deja cambiar importes bloqueado', (await locked.call('PATCH', `/api/events/${ev.id}`, { cost: 1 })).s === 403 && (await locked.call('PATCH', `/api/events/${ev.id}`, { budget: 1 })).s === 403);
   ok('sí deja cambiar otras cosas', (await locked.call('PATCH', `/api/events/${ev.id}`, { description: 'x' })).s === 200);
   const again = (await open.call('GET', `/api/events/${ev.id}`)).j;
   ok('con la sesión desbloqueada se ven', again.costs_unlocked === true && again.event.cost === 123.45);

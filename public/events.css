@@ -487,3 +487,5 @@ main.auth-card .err { min-height: 18px; }
 .task .tmeta .costbox span { font-weight: 600; color: var(--muted); }
 .task .tmeta .costbox input[type=number], .task .tmeta input[type=number] { width: 112px; text-align: right; }
 .task .tmeta input[type=date] { width: 146px; }
+
+.kv .pos { color: #15803d; } .kv .neg { color: #b91c1c; }

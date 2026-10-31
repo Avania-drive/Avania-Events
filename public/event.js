@@ -148,7 +148,7 @@ function costModal(e, tasks, sections) {
     el('div', { class: 'costh' }, el('b', {}, g.name), el('b', {}, fmtMoney(sub(g)))),
     g.list.map((t) => el('div', { class: 'costline' }, el('span', {}, t.title), el('span', {}, fmtMoney(t.cost)))))) : el('p', { class: 'muted' }, 'Ninguna tarea tiene coste anotado.'),
     el('div', { class: 'costtotal' }, el('span', {}, 'Total de las tareas'), el('b', {}, fmtMoney(total))),
-    e.cost != null ? el('div', { class: 'costline' }, el('span', {}, 'Coste anotado en la acción'), el('span', {}, fmtMoney(e.cost))) : null,
+    e.budget != null ? [el('div', { class: 'costline' }, el('span', {}, 'Presupuesto a cliente (importe de facturación)'), el('span', {}, fmtMoney(e.budget))), el('div', { class: 'costtotal' }, el('span', {}, 'Resultado (presupuesto − costes)'), el('b', {}, fmtMoney(Number(e.budget) - total) || '0 €'))] : null,
     el('p', { class: 'muted', style: { margin: '10px 0 0' } }, `${bill}${sinCoste ? ` · ${sinCoste} tarea${sinCoste === 1 ? '' : 's'} sin coste no aparece${sinCoste === 1 ? '' : 'n'}` : ''}`));
 
   const csv = () => {
@@ -157,14 +157,14 @@ function costModal(e, tasks, sections) {
     const rows = [[head], [`Fechas: ${dates}`, bill], [], ['Sección', 'Tarea', 'Importe (€)']];
     for (const g of groups) { for (const t of g.list) rows.push([g.name, t.title, num(t.cost)]); rows.push([g.name, 'Subtotal', num(sub(g))]); }
     rows.push([], ['', 'Total de las tareas', num(total)]);
-    if (e.cost != null) rows.push(['', 'Coste anotado en la acción', num(e.cost)]);
+    if (e.budget != null) rows.push(['', 'Presupuesto a cliente', num(e.budget)], ['', 'Resultado (presupuesto - costes)', num(Number(e.budget) - total)]);
     const blob = new Blob(['﻿' + rows.map((r) => r.map(cell).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const a = el('a', { href: URL.createObjectURL(blob), download: `costes-${e.ref}.csv` }); document.body.append(a); a.click(); a.remove();
   };
   const print = () => {
     const w = window.open('', '_blank');
     if (!w) { toast('El navegador ha bloqueado la ventana de impresión', true); return; }
-    w.document.write(`<!doctype html><meta charset="utf-8"><title>Costes ${esc(e.ref)}</title><style>body{font:14px/1.45 Inter,Arial,sans-serif;color:#1c2b2b;margin:32px}h1{font-size:20px;margin:0 0 4px}p{margin:2px 0;color:#555}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{padding:6px 8px;text-align:left;border-bottom:1px solid #ddd}td.n,th.n{text-align:right;white-space:nowrap}tr.s td{font-weight:700;background:#f3f6f6}tr.t td{font-weight:700;font-size:16px;border-top:2px solid #1c2b2b;border-bottom:0}</style><h1>${esc(head)}</h1><p>${esc(dates)} · ${esc(bill)}</p><table><tr><th>Sección</th><th>Tarea</th><th class="n">Importe</th></tr>${groups.map((g) => g.list.map((t) => `<tr><td>${esc(g.name)}</td><td>${esc(t.title)}</td><td class="n">${eur(t.cost)}</td></tr>`).join('') + `<tr class="s"><td colspan="2">Subtotal ${esc(g.name)}</td><td class="n">${eur(sub(g))}</td></tr>`).join('')}<tr class="t"><td colspan="2">Total de las tareas</td><td class="n">${eur(total)}</td></tr>${e.cost != null ? `<tr><td colspan="2">Coste anotado en la acción</td><td class="n">${eur(e.cost)}</td></tr>` : ''}</table>`);
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>Costes ${esc(e.ref)}</title><style>body{font:14px/1.45 Inter,Arial,sans-serif;color:#1c2b2b;margin:32px}h1{font-size:20px;margin:0 0 4px}p{margin:2px 0;color:#555}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{padding:6px 8px;text-align:left;border-bottom:1px solid #ddd}td.n,th.n{text-align:right;white-space:nowrap}tr.s td{font-weight:700;background:#f3f6f6}tr.t td{font-weight:700;font-size:16px;border-top:2px solid #1c2b2b;border-bottom:0}</style><h1>${esc(head)}</h1><p>${esc(dates)} · ${esc(bill)}</p><table><tr><th>Sección</th><th>Tarea</th><th class="n">Importe</th></tr>${groups.map((g) => g.list.map((t) => `<tr><td>${esc(g.name)}</td><td>${esc(t.title)}</td><td class="n">${eur(t.cost)}</td></tr>`).join('') + `<tr class="s"><td colspan="2">Subtotal ${esc(g.name)}</td><td class="n">${eur(sub(g))}</td></tr>`).join('')}<tr class="t"><td colspan="2">Total de las tareas</td><td class="n">${eur(total)}</td></tr>${e.budget != null ? `<tr><td colspan="2">Presupuesto a cliente</td><td class="n">${eur(e.budget)}</td></tr><tr class="t"><td colspan="2">Resultado (presupuesto − costes)</td><td class="n">${eur(Number(e.budget) - total)}</td></tr>` : ''}</table>`);
     w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
   };
   openModal({ title: 'Desglose de costes', wide: true, body: el('div', {}, el('p', { style: { margin: '0 0 12px' } }, el('b', {}, head), el('br'), el('span', { class: 'muted' }, dates)), table),
@@ -187,14 +187,14 @@ function cloneModal(e) {
 
 const ddmm = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '');
 const sentChip = (t) => (t.sent_to_production ? el('span', { class: 'sentprod', title: `Enviado a producción${t.sent_to_production.provider ? ` (${t.sent_to_production.provider})` : ''} el ${ddmm(t.sent_to_production.date)}` }, 'Enviado a producción', el('b', {}, ddmm(t.sent_to_production.date))) : null);
-const LOG_LABEL = { status: 'el estado', owner_id: 'el responsable', starts_on: 'la fecha de inicio', ends_on: 'la fecha de fin', cost: 'el coste', invoiced: 'la facturación', name: 'el nombre', archived: 'el archivado' };
+const LOG_LABEL = { status: 'el estado', owner_id: 'el responsable', starts_on: 'la fecha de inicio', ends_on: 'la fecha de fin', cost: 'el coste', budget: 'el presupuesto a cliente', invoiced: 'la facturación', name: 'el nombre', archived: 'el archivado' };
 function logText(l) {
   const d = l.detail || {};
   if (l.action === 'crear') return 'creó la acción';
   if (l.action === 'archivar') return 'archivó la acción';
   if (l.action === 'tarea hecha') return `terminó la tarea «${d.title}»`;
   if (l.action === 'tarea reabierta') return `reabrió la tarea «${d.title}»`;
-  const show = (k, v) => (v == null || v === '' ? 'nada' : k === 'status' ? state.meta.eventStatus[v] : k === 'owner_id' ? (userOf(v)?.name || userOf(v)?.email || '—') : k === 'invoiced' || k === 'archived' ? (v ? 'sí' : 'no') : k === 'cost' ? fmtMoney(v) : k.endsWith('_on') ? fmtDateLong(v) : v);
+  const show = (k, v) => (v == null || v === '' ? 'nada' : k === 'status' ? state.meta.eventStatus[v] : k === 'owner_id' ? (userOf(v)?.name || userOf(v)?.email || '—') : k === 'invoiced' || k === 'archived' ? (v ? 'sí' : 'no') : k === 'cost' || k === 'budget' ? fmtMoney(v) : k.endsWith('_on') ? fmtDateLong(v) : v);
   return `cambió ${Object.entries(d).map(([k, v]) => `${LOG_LABEL[k] || k}: ${show(k, v.de)} → ${show(k, v.a)}`).join(' · ')}`;
 }
 
@@ -415,7 +415,8 @@ export async function eventView(id, openTaskId = null) {
     const tcost = l.reduce((n, t) => n + (t.cost || 0), 0);
     const row = (k, v) => [el('dt', {}, k), el('dd', {}, v)];
     summaryBox.replaceChildren(...row('Estado', statusBadge(state.meta.eventStatus[e.status], STATUS_COLOR[e.status])), ...row('Tareas hechas', `${done} de ${l.length}`), ...row('Tareas vencidas', String(late)),
-      ...row('Coste de la acción', !unlocked ? lockedChip() : e.cost != null ? fmtMoney(e.cost) : '—'), ...row('Coste de las tareas', !unlocked ? lockedChip() : el('button', { class: 'linkbtn', type: 'button', title: 'Ver el desglose por sección', onclick: () => costModal(e, tasks, state.meta.sections) }, tcost ? fmtMoney(tcost) : '—', ' ▾')), ...row('Facturado', e.invoiced ? 'Sí' : 'No'), ...(resultsLink ? row('Resultados', el('a', { href: resultsLink.url, target: '_blank', rel: 'noopener' }, 'Archivo de resultados')) : []));
+      ...row('Importe de facturación', !unlocked ? lockedChip() : e.budget != null ? fmtMoney(e.budget) : '—'), ...row('Coste de las tareas', !unlocked ? lockedChip() : el('button', { class: 'linkbtn', type: 'button', title: 'Ver el desglose por sección', onclick: () => costModal(e, tasks, state.meta.sections) }, tcost ? fmtMoney(tcost) : '—', ' ▾')),
+      ...(!unlocked || e.budget == null ? [] : [...row('Resultado', el('strong', { class: Number(e.budget) - tcost < 0 ? 'neg' : 'pos' }, fmtMoney(Number(e.budget) - tcost) || '0 €')), ...(Number(e.budget) > 0 ? row('Margen', `${Math.round(((Number(e.budget) - tcost) / Number(e.budget)) * 100)} %`) : [])]), ...row('Facturado', e.invoiced ? 'Sí' : 'No'), ...(resultsLink ? row('Resultados', el('a', { href: resultsLink.url, target: '_blank', rel: 'noopener' }, 'Archivo de resultados')) : []));
   }
   async function refreshLog() {
     try { log = (await api('GET', `/api/events/${id}/log`)).log; } catch { /* se queda lo que había */ }
@@ -442,7 +443,7 @@ export async function eventView(id, openTaskId = null) {
           field('Responsable', select([['', 'Sin responsable'], ...state.meta.users.map((u) => [u.id, u.name || u.email])], e.owner_id || '', { onchange: (ev) => set('owner_id', ev.target.value || null) })),
           dateIn('starts_on', 'Inicio'), dateIn('ends_on', 'Fin'), field('Año', yearIn),
           field('Ubicación', el('input', { type: 'text', list: 'locs', value: e.location || '', maxlength: 120, oninput: (ev) => set('location', ev.target.value) })),
-          field('Coste de la acción (€)', !unlocked ? lockedChip() : el('input', { type: 'text', inputmode: 'decimal', value: e.cost ?? '', placeholder: '0', onchange: (ev) => set('cost', ev.target.value === '' ? null : ev.target.value) })),
+          field('Presupuesto a cliente (€)', !unlocked ? lockedChip() : el('input', { type: 'text', inputmode: 'decimal', value: e.budget ?? '', placeholder: '0', onchange: (ev) => { set('budget', ev.target.value === '' ? null : ev.target.value); refreshSummary(); } })),
           field('Facturación', el('label', { class: 'av-switch' }, el('input', { type: 'checkbox', checked: e.invoiced, onchange: (ev) => set('invoiced', ev.target.checked) }), el('i'), 'Facturada')),
           el('div', { class: 'field wide' }, el('label', {}, 'Colaboradores'), collabBox)),
           el('datalist', { id: 'locs' }, state.meta.locations.map((l) => el('option', { value: l })))),

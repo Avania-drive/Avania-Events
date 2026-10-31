@@ -66,7 +66,7 @@ app.use(async (req, res, next) => {
 
 // Los importes solo se ven con la sesión desbloqueada (usuario y contraseña en Informes, 30 min): fuera de ahí se vacían en las respuestas y no se aceptan cambios de importes.
 const costsOpen = (req) => Boolean(req.session?.reports_until && new Date(req.session.reports_until) > new Date());
-const MONEY_KEYS = new Set(['cost', 'tasks_cost', 'por_facturar_importe', 'coste_anio']);
+const MONEY_KEYS = new Set(['cost', 'budget', 'tasks_cost', 'por_facturar_importe', 'coste_anio']);
 const hideMoney = (x) => {
   if (Array.isArray(x)) return x.map(hideMoney);
   if (x && typeof x === 'object' && !(x instanceof Date)) { const o = {}; for (const [k, v] of Object.entries(x)) o[k] = MONEY_KEYS.has(k) ? null : hideMoney(v); if (o.detail && typeof o.detail === 'object') delete o.detail.cost; return o; }
@@ -75,7 +75,7 @@ const hideMoney = (x) => {
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api/') || req.path.startsWith('/api/informes') || !req.user) return next();
   const open = costsOpen(req);
-  if (!open && ['POST', 'PATCH', 'PUT'].includes(req.method) && req.body && typeof req.body === 'object' && 'cost' in req.body) return res.status(403).json({ error: 'Los importes están ocultos: desbloquéalos con tu usuario y contraseña', code: 'reports_locked' });
+  if (!open && ['POST', 'PATCH', 'PUT'].includes(req.method) && req.body && typeof req.body === 'object' && ('cost' in req.body || 'budget' in req.body)) return res.status(403).json({ error: 'Los importes están ocultos: desbloquéalos con tu usuario y contraseña', code: 'reports_locked' });
   const json = res.json.bind(res);
   res.json = (body) => json(body && typeof body === 'object' ? { ...(open ? body : hideMoney(body)), costs_unlocked: open } : body);
   next();
@@ -158,7 +158,7 @@ app.get('/api/meta', ...staff, wrap(async (req, res) => {
 // ───────── Acciones (eventos) ─────────
 const LIST_SQL = `
   select e.id, e.ref, e.client_id, c.name client_name, c.code client_code, c.color client_color, e.year, e.name, e.type_id, e.status, e.priority,
-         e.owner_id, e.starts_on, e.ends_on, e.location, e.cost, e.invoiced, e.archived, e.updated_at,
+         e.owner_id, e.starts_on, e.ends_on, e.location, e.cost, e.budget, e.invoiced, e.archived, e.updated_at,
          coalesce(t.total, 0)::int tasks_total, coalesce(t.done, 0)::int tasks_done, coalesce(t.overdue, 0)::int tasks_overdue, coalesce(t.cost, 0) tasks_cost
   from events e
   join clients c on c.id = e.client_id
@@ -318,7 +318,7 @@ app.patch('/api/events/:id', ...staff, wrap(async (req, res) => {
   if (Object.keys(d).length) {
     const u = updateSql('events', d, cur.id);
     await q(u.sql, u.args);
-    const watched = ['status', 'owner_id', 'starts_on', 'ends_on', 'cost', 'invoiced', 'name', 'archived'];
+    const watched = ['status', 'owner_id', 'starts_on', 'ends_on', 'cost', 'budget', 'invoiced', 'name', 'archived'];
     const diff = Object.fromEntries(watched.filter((k) => k in d && String(d[k] ?? '') !== String(cur[k] ?? '')).map((k) => [k, { de: cur[k] ?? null, a: d[k] ?? null }]));
     if (Object.keys(diff).length) await logEvent(cur.id, req.user, 'cambiar', diff);
     if (d.status === 'terminado' && cur.status !== 'terminado') notifyCompleted(cur.id, req.user).catch((err) => console.error('[resumen de costes]', err.message));   // sin esperar al correo
@@ -455,7 +455,7 @@ async function notifyCompleted(eventId, actor) {
   const total = tasks.reduce((n, t) => n + Number(t.cost), 0);
   const dates = e.starts_on ? `${e.starts_on}${e.ends_on && e.ends_on !== e.starts_on ? ` a ${e.ends_on}` : ''}` : 'sin fecha';
   const lines = [`${e.ref} · ${e.name} (${e.client}). Fechas: ${dates}. Terminada${actor ? ` por ${actor.name || actor.email}` : ''}.`,
-    `Coste anotado en la acción: ${e.cost != null ? euro(e.cost) : 'sin indicar'}. Suma de las tareas con coste: ${euro(total)}. Estado de facturación: ${e.invoiced ? 'ya facturada' : 'pendiente de facturar'}.`];
+    `Presupuesto a cliente (importe de facturación): ${e.budget != null ? euro(e.budget) : 'sin indicar'}. Coste de las tareas: ${euro(total)}.${e.budget != null ? ` Resultado: ${euro(Number(e.budget) - total)}${Number(e.budget) > 0 ? ` (${Math.round(((Number(e.budget) - total) / Number(e.budget)) * 100)} % de margen)` : ''}.` : ''} Estado de facturación: ${e.invoiced ? 'ya facturada' : 'pendiente de facturar'}.`];
   if (bySection.size) lines.push(`Por sección: ${[...bySection.entries()].map(([k, v]) => `${k} ${euro(v)}`).join(' · ')}.`);
   if (tasks.length) lines.push(`Detalle (${tasks.length} tareas con coste): ${tasks.slice(0, 40).map((t) => `${t.title.trim()} ${euro(t.cost)}`).join(' · ')}${tasks.length > 40 ? ' …' : ''}.`);
   else lines.push('Ninguna tarea tiene coste anotado.');
@@ -623,9 +623,9 @@ app.get('/api/dashboard', ...staff, wrap(async (req, res) => {
   const [counts, overdue, upcoming, inProgress, mine, toInvoice] = await Promise.all([
     q(`select count(*) filter (where e.status = 'en_proceso')::int en_proceso,
               count(*) filter (where e.status in ('sin_empezar', 'en_proceso') and e.starts_on between current_date and current_date + 30)::int proximas,
-              count(*) filter (where e.status = 'terminado' and not e.invoiced and coalesce(e.cost, 0) > 0)::int por_facturar,
-              coalesce(sum(e.cost) filter (where e.status = 'terminado' and not e.invoiced), 0) por_facturar_importe,
-              coalesce(sum(e.cost) filter (where e.year = extract(year from current_date)::int), 0) coste_anio
+              count(*) filter (where e.status = 'terminado' and not e.invoiced and coalesce(e.budget, 0) > 0)::int por_facturar,
+              coalesce(sum(e.budget) filter (where e.status = 'terminado' and not e.invoiced), 0) por_facturar_importe,
+              coalesce(sum(e.budget) filter (where e.year = extract(year from current_date)::int), 0) coste_anio
        from events e where not e.archived ${scope.sql}`, scope.args),
     q(`select count(*)::int n from tasks t join events e on e.id = t.event_id
        where not e.archived and t.status not in ('finalizada', 'archivada') and t.due_on < current_date ${scope.sql}`, scope.args),
@@ -636,7 +636,7 @@ app.get('/api/dashboard', ...staff, wrap(async (req, res) => {
        from tasks t join events e on e.id = t.event_id
        where not e.archived and t.owner_id = $${scope.args.length + 1} and t.status not in ('finalizada', 'archivada') ${scope.sql}
        order by t.due_on nulls last, t.created_at limit 12`, [...scope.args, req.user.id]),
-    q(`${LIST_SQL} where not e.archived and e.status = 'terminado' and not e.invoiced and coalesce(e.cost, 0) > 0 ${scope.sql} order by e.ends_on nulls last limit 10`, scope.args),
+    q(`${LIST_SQL} where not e.archived and e.status = 'terminado' and not e.invoiced and coalesce(e.budget, 0) > 0 ${scope.sql} order by e.ends_on nulls last limit 10`, scope.args),
   ]);
   res.json({ counts: { ...counts.rows[0], tareas_vencidas: overdue.rows[0].n }, upcoming: upcoming.rows, inProgress: inProgress.rows, myTasks: mine.rows, toInvoice: toInvoice.rows });
 }));

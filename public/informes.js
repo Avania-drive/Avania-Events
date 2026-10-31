@@ -18,7 +18,7 @@ function card(e) {
     el('div', { class: 'meta' }, [e.starts_on ? fmtRange(e.starts_on, e.ends_on) : 'Sin fecha', o ? (o.name || o.email) : null].filter(Boolean).join(' · ')),
     el('div', { class: 'prog' }, el('div', { class: 'bar' }, el('i', { style: { width: `${pct(e.tasks_done, e.tasks_total)}%` } })),
       `${e.tasks_done} de ${e.tasks_total} tareas${late ? ` · ${e.tasks_overdue} vencida${e.tasks_overdue === 1 ? '' : 's'}` : ''}`),
-    el('div', { class: 'foot' }, e.cost != null ? el('strong', { class: 'price' }, fmtMoney(e.cost)) : el('span', { class: 'muted' }, 'Sin coste'), el('span', { class: e.invoiced ? 'ok' : 'muted' }, e.invoiced ? 'Facturada' : 'Sin facturar')),
+    el('div', { class: 'foot' }, e.budget != null ? el('strong', { class: 'price' }, fmtMoney(e.budget)) : el('span', { class: 'muted' }, 'Sin presupuesto'), el('span', { class: e.invoiced ? 'ok' : 'muted' }, e.invoiced ? 'Facturada' : 'Sin facturar')),
     el('div', { class: 'ttype' }, el('i', { class: 'dot' }), t?.name || 'Sin tipo'));
 }
 
@@ -82,7 +82,7 @@ export async function informesView() {
     function render() {
       const l = all.filter(keep);
       const tasks = sum(l, (e) => e.tasks_total), done = sum(l, (e) => e.tasks_done), late = sum(l, (e) => e.tasks_overdue);
-      const cost = sum(l, (e) => e.cost), billed = sum(l.filter((e) => e.invoiced), (e) => e.cost), unbilled = cost - billed;
+      const cost = sum(l, (e) => e.budget), billed = sum(l.filter((e) => e.invoiced), (e) => e.budget), unbilled = cost - billed;
       const byStatus = Object.entries(state.meta.eventStatus).map(([k, label]) => ({ label, n: l.filter((e) => e.status === k).length, color: STATUS_COLOR[k] })).filter((r) => r.n);
       const byType = [...state.meta.types.map((t) => ({ label: t.name, n: l.filter((e) => e.type_id === t.id).length, color: t.color })), { label: 'Sin tipo', n: l.filter((e) => !e.type_id).length, color: '#98a2b3' }].filter((r) => r.n).sort((a, b) => b.n - a.n);
       const months = Array.from({ length: 12 }, (_, i) => ({ label: MONTHS_SHORT[i], n: l.filter((e) => e.starts_on && Number(e.starts_on.slice(5, 7)) === i + 1).length })).filter((r) => r.n);
@@ -99,7 +99,7 @@ export async function informesView() {
           el('div', { class: 'card tile hero' }, el('span', { class: 'val' }, String(l.length)), el('span', { class: 'lbl' }, l.length === 1 ? 'Acción' : 'Acciones')),
           el('div', { class: 'card tile' }, el('span', { class: 'val' }, `${pct(done, tasks)} %`), el('span', { class: 'lbl' }, `Tareas hechas (${done} de ${tasks})`)),
           el('div', { class: `card tile${late ? ' warn' : ''}` }, el('span', { class: 'val' }, String(late)), el('span', { class: 'lbl' }, 'Tareas con la fecha pasada')),
-          el('div', { class: 'card tile' }, el('strong', { class: 'val' }, fmtMoney(cost) || '0 €'), el('span', { class: 'lbl' }, 'Coste de las acciones')),
+          el('div', { class: 'card tile' }, el('strong', { class: 'val' }, fmtMoney(cost) || '0 €'), el('span', { class: 'lbl' }, 'Importe de facturación')),
           el('div', { class: 'card tile' }, el('strong', { class: 'val' }, fmtMoney(unbilled) || '0 €'), el('span', { class: 'lbl' }, `Sin facturar (facturado: ${fmtMoney(billed) || '0 €'})`))),
         el('div', { class: 'cols rep-cols' },
           el('section', { class: 'card sec' }, el('h3', {}, 'Por estado'), barList(byStatus, l.length)),
@@ -107,7 +107,7 @@ export async function informesView() {
           el('section', { class: 'card sec' }, el('h3', {}, 'Por mes de inicio'), barList(months, l.length))),
         el('h2', { class: 'rep-h' }, f.by === 'fecha' ? 'Cada acción' : `Cada acción, por ${GROUPS[f.by].toLowerCase()}`),
         ...groups.map((g) => el('section', { class: 'rep-group', style: { '--g': g.color || '#98a2b3' } },
-          g.label ? el('h3', { class: 'rep-gh' }, el('i', { class: 'dot' }), g.label, el('small', {}, `${g.items.length} · `, el('strong', {}, fmtMoney(sum(g.items, (e) => e.cost)) || '0 €'))) : null,
+          g.label ? el('h3', { class: 'rep-gh' }, el('i', { class: 'dot' }), g.label, el('small', {}, `${g.items.length} · `, el('strong', {}, fmtMoney(sum(g.items, (e) => e.budget)) || '0 €'))) : null,
           el('div', { class: 'rep-grid' }, g.items.map(card))))].filter(Boolean));
     }
     render();
