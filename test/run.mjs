@@ -249,6 +249,19 @@ console.log('Proveedores y producción');
   await ana.call('DELETE', `/api/events/${evp.id}?hard=1`); await admin.call('DELETE', `/api/events/${evp.id}?hard=1`);
 }
 
+console.log('Marca de enviado a producción');
+{
+  const m2 = (await ana.call('GET', '/api/meta')).j;
+  const evp = (await ana.call('POST', '/api/events', { name: 'Con envío', client_id: m2.clients[0].id, clone_tasks: [{ title: 'Veleros', section_id: m2.sections[1].id }, { title: 'Otra', section_id: m2.sections[1].id }] })).j.event;
+  const det = (await ana.call('GET', `/api/events/${evp.id}`)).j;
+  await q("insert into task_files (task_id, event_id, name, folder, drive_file_id) values ($1,$2,'velero.pdf','Creatividades','FILE1')", [det.tasks[0].id, evp.id]);
+  await q("insert into production_sends (event_id, provider_name, sent_to, sender_name, files, file_ids) values ($1,'Top Impresión','x@y.es','Ana','[\"velero.pdf\"]'::jsonb,'[\"FILE1\"]'::jsonb)", [evp.id]);
+  const after = (await ana.call('GET', `/api/events/${evp.id}`)).j.tasks;
+  ok('la tarea con la pieza enviada lleva la marca y la fecha', after.find((t) => t.title === 'Veleros').sent_to_production?.date === new Date().toISOString().slice(0, 10) || /^\d{4}-\d{2}-\d{2}$/.test(after.find((t) => t.title === 'Veleros').sent_to_production?.date));
+  ok('la otra tarea no', after.find((t) => t.title === 'Otra').sent_to_production === null);
+  await admin.call('DELETE', `/api/events/${evp.id}?hard=1`);
+}
+
 console.log('Salud');
 ok('/api/health', (await new Client().call('GET', '/api/health')).j.ok === true);
 ok('una ruta rara de la API → 404', (await ana.call('GET', '/api/nada')).s === 404);

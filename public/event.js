@@ -59,13 +59,15 @@ async function productionModal(e) {
       el('p', { class: 'muted wide' }, 'Marca las piezas aprobadas. Se copian a la carpeta «Producción» de esta acción y el proveedor recibe un correo con el enlace. El correo sale a nombre de Elvira Vila, con copia a ella.'),
       el('div', { class: 'field wide' }, el('div', { class: 'clone-h' }, el('label', {}, 'Piezas de Creatividades'), el('button', { class: 'btn ghost small', type: 'button', onclick: () => checks.forEach((c) => { c.checked = true; }) }, 'Marcar todas'), el('button', { class: 'btn ghost small', type: 'button', onclick: () => checks.forEach((c) => { c.checked = false; }) }, 'Quitar todas')), list),
       field('Proveedor', prov), el('div', { class: 'field wide' }, el('label', {}, 'Mensaje'), message), hist ? el('div', { class: 'field wide' }, hist) : null, el('div', { class: 'field wide' }, err)),
-    actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Enviar a producción', keep: true, run: async (_e, close) => {
+    actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Enviar a producción', keep: true, run: async (ev, close) => {
       err.textContent = '';
+      const btn = ev.currentTarget || ev.target;
       const file_ids = checks.filter((c) => c.checked).map((c) => c.value);
       if (!file_ids.length) { err.textContent = 'Marca al menos una pieza'; return false; }
       if (!prov.value) { err.textContent = 'Elige el proveedor'; return false; }
-      try { const r = await api('POST', `/api/events/${e.id}/produccion`, { provider_id: prov.value, file_ids, message: message.value }); close(); toast(`Enviado a ${r.provider}: ${r.files} pieza${r.files === 1 ? '' : 's'}${r.shared ? '' : ' (no se pudo dar acceso a la carpeta: avísale)'}`); }
-      catch (er) { err.textContent = er.message; return false; }
+      btn.disabled = true; btn.textContent = 'Enviando…';
+      try { const r = await api('POST', `/api/events/${e.id}/produccion`, { provider_id: prov.value, file_ids, message: message.value }); close(); window.dispatchEvent(new HashChangeEvent('hashchange')); toast(`Enviado a ${r.provider}: ${r.files} pieza${r.files === 1 ? '' : 's'}${r.shared ? '' : ' (no se pudo dar acceso a la carpeta: avísale)'}`); }
+      catch (er) { err.textContent = er.message; btn.disabled = false; btn.textContent = 'Enviar a producción'; return false; }
     } }] });
 }
 
@@ -84,6 +86,8 @@ function cloneModal(e) {
     } }] });
 }
 
+const ddmm = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '');
+const sentChip = (t) => (t.sent_to_production ? el('span', { class: 'sentprod', title: `Enviado a producción${t.sent_to_production.provider ? ` (${t.sent_to_production.provider})` : ''} el ${ddmm(t.sent_to_production.date)}` }, 'Enviado a producción', el('b', {}, ddmm(t.sent_to_production.date))) : null);
 const LOG_LABEL = { status: 'el estado', owner_id: 'el responsable', starts_on: 'la fecha de inicio', ends_on: 'la fecha de fin', cost: 'el coste', invoiced: 'la facturación', name: 'el nombre', archived: 'el archivado' };
 function logText(l) {
   const d = l.detail || {};
@@ -153,6 +157,7 @@ export async function eventView(id, openTaskId = null) {
       el('input', { type: 'checkbox', checked: t.status === 'finalizada', 'aria-label': `Hecha: ${t.title}`, onchange: (ev) => upTask(t, { status: ev.target.checked ? 'finalizada' : 'sin_empezar' }) }),
       el('input', { class: 'tt', type: 'text', value: t.title, maxlength: 300, 'aria-label': 'Tarea', onchange: (ev) => { if (!ev.target.value.trim()) { ev.target.value = t.title; return; } upTask(t, { title: ev.target.value }); } }),
       el('div', { class: 'tmeta' },
+        sentChip(t),
         select(Object.entries(state.meta.taskStatus), t.status, { class: 'stsel', 'aria-label': 'Estado de la tarea', style: { '--c': TASK_COLOR[t.status] }, onchange: (ev) => upTask(t, { status: ev.target.value }) }),
         select([['', 'Sin responsable'], ...state.meta.users.map((u) => [u.id, firstName(u)])], t.owner_id || '', { 'aria-label': 'Responsable de la tarea', onchange: (ev) => upTask(t, { owner_id: ev.target.value || null }) }),
         el('input', { type: 'date', value: t.due_on || '', 'aria-label': 'Fecha límite', onchange: (ev) => upTask(t, { due_on: ev.target.value || null }) }),
@@ -215,7 +220,7 @@ export async function eventView(id, openTaskId = null) {
     const link = el('input', { type: 'url', placeholder: 'https://… (carpeta de Drive, presupuesto…)', value: t.links?.[0]?.url || '' });
     const sub = el('input', { type: 'text', placeholder: 'Nueva subtarea…' });
     openModal({ title: t.title, wide: true,
-      body: el('div', { class: 'fields' }, field('Sección', sec), field('Prioridad', prio), field('Enlace', link), el('div', { class: 'field wide' }, el('label', {}, 'Resumen'), summary), el('div', { class: 'field wide' }, el('label', {}, 'Archivos de esta tarea'), filesBox), field('Añadir una subtarea', sub)),
+      body: el('div', { class: 'fields' }, field('Sección', sec), field('Prioridad', prio), field('Enlace', link), el('div', { class: 'field wide' }, el('label', {}, 'Resumen'), summary), el('div', { class: 'field wide' }, el('label', {}, 'Archivos de esta tarea'), sentChip(t), filesBox), field('Añadir una subtarea', sub)),
       actions: [
         { label: 'Borrar tarea', cls: 'danger', run: async () => { if (!(await confirmBox('Borrar tarea', `¿Borrar «${t.title}»${tasks.some((x) => x.parent_id === t.id) ? ' y sus subtareas' : ''}?`, 'Borrar', true))) return false; try { await api('DELETE', `/api/tasks/${t.id}`); tasks = tasks.filter((x) => x.id !== t.id && x.parent_id !== t.id); drawTasks(); refreshSummary(); } catch (er) { toast(er.message, true); } } },
         { label: 'Guardar', run: async () => {

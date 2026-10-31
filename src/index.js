@@ -201,7 +201,9 @@ app.get('/api/events/:id', ...staff, wrap(async (req, res) => {
   ]);
   const files = (await q('select id, task_id, name, folder, drive_file_id, size, created_at from task_files where event_id = $1 order by created_at', [e.id])).rows;
   const photos = files.filter((f) => !f.task_id).map((f) => ({ id: f.id, name: f.name, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view`, thumb: `https://drive.google.com/thumbnail?id=${f.drive_file_id}&sz=w320` }));
-  const withFiles = tasks.rows.map((t) => ({ ...t, files: files.filter((f) => f.task_id === t.id).map((f) => ({ id: f.id, name: f.name, folder: f.folder, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view` })) }));
+  const sends = (await q("select file_ids, to_char(created_at at time zone 'Europe/Madrid', 'YYYY-MM-DD') sent_day, provider_name from production_sends where event_id = $1 order by created_at desc", [e.id])).rows;
+  const sentInfo = (t) => { const mine = new Set(files.filter((f) => f.task_id === t.id).map((f) => f.drive_file_id)); const hit = sends.find((x) => (x.file_ids || []).some((id) => mine.has(id))); return hit ? { date: hit.sent_day, provider: hit.provider_name } : null; };
+  const withFiles = tasks.rows.map((t) => ({ ...t, sent_to_production: sentInfo(t), files: files.filter((f) => f.task_id === t.id).map((f) => ({ id: f.id, name: f.name, folder: f.folder, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view` })) }));
   res.json({ event: { ...e, collaborators: collabs.rows.map((r) => r.user_id), drive_url: e.drive_folder_id ? `https://drive.google.com/drive/folders/${e.drive_folder_id}` : null }, tasks: withFiles, photos, drive_enabled: driveEnabled() });
 }));
 
@@ -427,13 +429,17 @@ app.delete('/api/admin/providers/:id', ...admins, wrap(async (req, res) => {
 }));
 
 const isFile = (f) => f.mimeType !== 'application/vnd.google-apps.folder';
+const subCache = new Map();   // «carpeta de la acción|subcarpeta» → id (las subcarpetas no cambian de sitio: se evita preguntar a Drive cada vez)
+const sub = async (parent, name) => { const k = `${parent}|${name}`; if (!subCache.has(k)) subCache.set(k, await ensureFolder(parent, name)); return subCache.get(k); };
+const pool = async (items, n, fn) => { const out = []; let i = 0; await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const j = i++; out[j] = await fn(items[j]); } })); return out; };
 app.get('/api/events/:id/produccion', ...staff, wrap(async (req, res) => {
   const e = await loadEvent(req.params.id);
   const sends = (await q('select id, provider_name, sent_to, sender_name, files, message, folder_url, shared, created_at from production_sends where event_id = $1 order by created_at desc', [e.id])).rows;
   if (!driveEnabled() || !e.drive_folder_id) return res.json({ drive: false, items: [], sends, mail: mailEnabled() });
-  const root = e.drive_folder_id, creat = await ensureFolder(root, 'Creatividades'), prod = await ensureFolder(root, 'Producción');
-  const files = (await listChildren(creat)).filter(isFile), already = new Set((await listChildren(prod)).filter(isFile).map((f) => f.name));
-  const links = (await q('select f.drive_file_id, t.title from task_files f join tasks t on t.id = f.task_id where f.event_id = $1', [e.id])).rows;
+  const root = e.drive_folder_id;
+  const [creat, prod] = await Promise.all([sub(root, 'Creatividades'), sub(root, 'Producción')]);
+  const [cl, pl, links] = await Promise.all([listChildren(creat), listChildren(prod), q('select f.drive_file_id, t.title from task_files f join tasks t on t.id = f.task_id where f.event_id = $1', [e.id]).then((r) => r.rows)]);
+  const files = cl.filter(isFile), already = new Set(pl.filter(isFile).map((f) => f.name));
   const taskOf = new Map(links.map((l) => [l.drive_file_id, l.title]));
   res.json({ drive: true, mail: mailEnabled(), folder_url: folderUrl(prod), creativities_url: folderUrl(creat),
     items: files.map((f) => ({ id: f.id, name: f.name, size: Number(f.size) || null, url: f.webViewLink, task: taskOf.get(f.id) || null, in_production: already.has(f.name) })), sends });
@@ -448,14 +454,18 @@ app.post('/api/events/:id/produccion', ...staff, wrap(async (req, res) => {
   if (!prov.email) throw fail(400, `${prov.name} no tiene correo: añádelo en Administración, Proveedores`);
   const ids = [...new Set((Array.isArray(req.body.file_ids) ? req.body.file_ids : []).map(String))].slice(0, 100);
   if (!ids.length) throw fail(400, 'Marca al menos una pieza para enviar');
-  const creat = await ensureFolder(e.drive_folder_id, 'Creatividades'), prod = await ensureFolder(e.drive_folder_id, 'Producción');
-  const avail = new Map((await listChildren(creat)).filter(isFile).map((f) => [f.id, f]));
-  const have = new Set((await listChildren(prod)).filter(isFile).map((f) => f.name));
+  const [creat, prod] = await Promise.all([sub(e.drive_folder_id, 'Creatividades'), sub(e.drive_folder_id, 'Producción')]);
+  const [cl, pl] = await Promise.all([listChildren(creat), listChildren(prod)]);
+  const avail = new Map(cl.filter(isFile).map((f) => [f.id, f]));
+  const have = new Set(pl.filter(isFile).map((f) => f.name));
   const chosen = ids.map((i) => avail.get(i)).filter(Boolean);
   if (!chosen.length) throw fail(400, 'Esas piezas ya no están en la carpeta de Creatividades');
-  for (const f of chosen) if (!have.has(f.name)) await copyFile(f.id, prod, f.name);   // el original se queda en Creatividades
+  // copias (4 a la vez) y permiso al proveedor a la vez; el original se queda en Creatividades
   let shared = true;
-  try { await shareWith(prod, prov.email); } catch (err) { shared = false; console.error('[produccion] compartir carpeta:', err.message); }
+  await Promise.all([
+    pool(chosen.filter((f) => !have.has(f.name)), 4, (f) => copyFile(f.id, prod, f.name)),
+    shareWith(prod, prov.email).catch((err) => { shared = false; console.error('[produccion] compartir carpeta:', err.message); }),
+  ]);
   const url = folderUrl(prod), who = req.user.name || req.user.email;
   const message = String(req.body.message || '').trim().slice(0, 2000);
   const replyTo = process.env.PRODUCCION_REPLY_TO || 'elvira.vila@avania.es';
@@ -466,8 +476,8 @@ app.post('/api/events/:id/produccion', ...staff, wrap(async (req, res) => {
     paragraphs: [message || `Hola. Te enviamos las piezas aprobadas de «${e.name}» para producción.`, `Piezas (${chosen.length}): ${chosen.map((f) => f.name).join(', ')}.`, shared ? 'Te hemos dado acceso a la carpeta; si no puedes abrirla, respóndenos a este correo.' : 'Si no puedes abrir la carpeta, respóndenos a este correo y te damos acceso.'],
     button: { label: 'Abrir las piezas en Drive', url },
   });
-  await q('insert into production_sends (event_id, provider_id, provider_name, sent_to, sent_by, sender_name, files, message, folder_url, shared) values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)',
-    [e.id, prov.id, prov.name, prov.email, req.user.id, who, JSON.stringify(chosen.map((f) => f.name)), message, url, shared]);
+  await q('insert into production_sends (event_id, provider_id, provider_name, sent_to, sent_by, sender_name, files, file_ids, message, folder_url, shared) values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11)',
+    [e.id, prov.id, prov.name, prov.email, req.user.id, who, JSON.stringify(chosen.map((f) => f.name)), JSON.stringify(chosen.map((f) => f.id)), message, url, shared]);
   res.json({ ok: true, provider: prov.name, files: chosen.length, shared, folder_url: url });
 }));
 
