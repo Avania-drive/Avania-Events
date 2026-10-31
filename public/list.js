@@ -40,22 +40,27 @@ export async function listView(scope) {
   const typeChip = (e) => { const t = typeOf(e.type_id); return t ? el('span', { class: 'chip', style: { '--c': t.color } }, t.name) : null; };
   const stBadge = (e) => statusBadge(state.meta.eventStatus[e.status], STATUS_COLOR[e.status]);
 
+  let dateDir = 'asc';   // orden por fecha de inicio en la lista: asc = la más temprana primero
   function drawList(list) {
     if (!list.length) return el('div', { class: 'card empty-big' }, 'No hay acciones con esos filtros.');
     const groups = new Map();
+    const dir = dateDir === 'asc' ? 1 : -1;
+    list = [...list].sort((a, b) => (!a.starts_on - !b.starts_on) || dir * (a.starts_on || '').localeCompare(b.starts_on || '') || a.name.localeCompare(b.name));
     for (const e of list) {
       const key = byYear ? (e.starts_on ? Number(e.starts_on.slice(5, 7)) : 99) : e.year;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(e);
     }
-    const keys = [...groups.keys()].sort((a, b) => (byYear ? a - b : b - a));
+    const keys = [...groups.keys()].sort((a, b) => (byYear ? (a === 99) - (b === 99) || dir * (a - b) : b - a));
     const rows = keys.flatMap((k) => [
       el('tr', { class: 'mrow' }, el('td', { colspan: 8 }, byYear ? (k === 99 ? 'Sin fecha' : monthName(k - 1)) : String(k))),
       ...groups.get(k).map((e) => el('tr', { class: 'ev', tabindex: 0, onclick: () => (location.hash = `#/evento/${e.id}`), onkeydown: (ev) => ev.key === 'Enter' && (location.hash = `#/evento/${e.id}`) },
         el('td', { class: 'nm' }, el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } }, el('span', { class: 'ref' }, e.ref), cliChip(e), el('strong', {}, e.name), typeChip(e))),
         el('td', {}, fmtRange(e.starts_on, e.ends_on)), el('td', {}, stBadge(e)), el('td', {}, ownerCell(e.owner_id)), el('td', {}, progress(e)),
         el('td', { class: 'num' }, e.cost != null ? fmtMoney(e.cost) : el('span', { class: 'muted' }, '—')), el('td', {}, e.invoiced ? el('span', { class: 'yes' }, 'Facturado') : el('span', { class: 'muted' }, e.status === 'terminado' && e.cost ? 'Sin facturar' : '—'))))]);
-    return el('div', { class: 'card table-wrap' }, el('table', { class: 't' }, el('thead', {}, el('tr', {}, ['Acción', 'Fechas', 'Estado', 'Responsable', 'Tareas', 'Coste', 'Factura'].map((h, i) => el('th', { class: i === 5 ? 'num' : '' }, h)))), el('tbody', {}, rows)));
+    return el('div', { class: 'card table-wrap' }, el('table', { class: 't' }, el('thead', {}, el('tr', {}, ['Acción', 'Fechas', 'Estado', 'Responsable', 'Tareas', 'Coste', 'Factura'].map((h, i) => (h === 'Fechas'
+      ? el('th', { 'aria-sort': dateDir === 'asc' ? 'ascending' : 'descending' }, el('button', { class: 'sortbtn', type: 'button', title: dateDir === 'asc' ? 'Ahora: de la más temprana a la más tardía. Pulsa para invertir.' : 'Ahora: de la más tardía a la más temprana. Pulsa para invertir.', onclick: () => { dateDir = dateDir === 'asc' ? 'desc' : 'asc'; draw(); } }, 'Fechas', el('span', { class: 'arr', 'aria-hidden': 'true' }, dateDir === 'asc' ? '▲' : '▼')))
+      : el('th', { class: i === 5 ? 'num' : '' }, h))))), el('tbody', {}, rows)));
   }
 
   function drawBoxes(list) {
@@ -116,7 +121,7 @@ export async function listView(scope) {
     body.replaceChildren(mode === 'cajas' ? drawBoxes(list) : mode === 'tablero' ? drawBoard(list) : mode === 'cronograma' && byYear ? drawTimeline(list) : drawList(list));
     modes.forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
   }
-  const modes = [['cajas', 'board', 'Cajas'], ['lista', 'list', 'Lista'], ['tablero', 'board', 'Tablero'], ...(byYear ? [['cronograma', 'gantt', 'Cronograma']] : [])]
+  const modes = [['cajas', 'box', 'Cajas'], ['lista', 'list', 'Lista'], ['tablero', 'board', 'Tablero'], ...(byYear ? [['cronograma', 'gantt', 'Cronograma']] : [])]
     .map(([m, ic, label]) => el('button', { type: 'button', 'data-mode': m, onclick: () => { mode = m; setMode(m); draw(); } }, icon(ic), label));
 
   const users = [['', 'Responsable: todos'], ...state.meta.users.map((u) => [u.id, u.name || u.email])];
