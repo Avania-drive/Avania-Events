@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { q } from './db.js';
 import { hashPassword, verifyPassword, randomToken, sha256 } from './crypto.js';
 import { COOKIE, parseCookies, createSession, clearCookie, loadSession, requireUser, requireReady, requireRole, publicUser, isAdmin, tooMany } from './auth.js';
-import { EVENT_STATUS, TASK_STATUS, PRIORITIES, LOCATIONS, cleanEvent, cleanTask, cleanLinks, isUuid, yearFor } from './domain.js';
+import { EVENT_STATUS, TASK_STATUS, PRIORITIES, cleanEvent, cleanTask, cleanLinks, isUuid, yearFor } from './domain.js';
 import { sendInvite } from './invite.js';
 import { mailEnabled } from './mailer.js';
 
@@ -89,14 +89,15 @@ app.post('/api/invitacion/:token', wrap(async (req, res) => {
 
 // ───────── Datos de partida del panel ─────────
 app.get('/api/meta', ...staff, wrap(async (req, res) => {
-  const [clients, types, sections, users] = await Promise.all([
+  const [clients, types, sections, users, locations] = await Promise.all([
     q('select id, name, code, color, position, archived from clients order by position, name'),
     q('select id, name, color, position from event_types order by position, name'),
     q('select id, name, position from task_sections order by position, name'),
     q('select id, name, email, role, active from team_users order by coalesce(nullif(name, \'\'), email)'),
+    q('select id, name from locations order by position, name'),
   ]);
   res.json({
-    me: publicUser(req.user), eventStatus: EVENT_STATUS, taskStatus: TASK_STATUS, priorities: PRIORITIES, locations: LOCATIONS,
+    me: publicUser(req.user), eventStatus: EVENT_STATUS, taskStatus: TASK_STATUS, priorities: PRIORITIES, locations: locations.rows.map((l) => l.name),
     clients: clients.rows, types: types.rows, sections: sections.rows,
     users: users.rows.filter((u) => u.active).map(({ active, ...u }) => u),
   });
@@ -351,6 +352,41 @@ app.patch('/api/admin/clients/:id', ...admins, wrap(async (req, res) => {
     const r = await q('update clients set name = $1, color = $2, archived = $3 where id = $4 returning *', [name, color(b.color, cur.color), b.archived !== undefined ? Boolean(b.archived) : cur.archived, cur.id]);
     res.json({ client: r.rows[0] });
   } catch (e) { throw /unique|duplicate/i.test(e.message) ? fail(409, 'Ya hay un cliente con ese nombre') : e; }
+}));
+
+// Ubicaciones: fichas con dirección, aforo y notas. Las acciones guardan el nombre; al renombrar se actualiza en ellas.
+const cleanLocation = (b, cur = {}) => {
+  const name = b.name !== undefined ? String(b.name).trim().slice(0, 80) : cur.name;
+  if (!name) throw fail(400, 'Pon el nombre de la ubicación');
+  const cap = b.capacity !== undefined ? (b.capacity === '' || b.capacity === null ? null : Math.round(Number(b.capacity))) : cur.capacity ?? null;
+  if (cap !== null && (!Number.isFinite(cap) || cap < 0 || cap > 1000000)) throw fail(400, 'El aforo no es válido');
+  return { name, capacity: cap, address: b.address !== undefined ? String(b.address).trim().slice(0, 200) : cur.address ?? '', notes: b.notes !== undefined ? String(b.notes).trim().slice(0, 2000) : cur.notes ?? '' };
+};
+app.get('/api/admin/locations', ...admins, wrap(async (_req, res) => {
+  res.json({ locations: (await q(`select l.*, (select count(*) from events e where e.location = l.name and not e.archived)::int events from locations l order by l.position, l.name`)).rows });
+}));
+app.post('/api/admin/locations', ...admins, wrap(async (req, res) => {
+  const d = cleanLocation(req.body);
+  try {
+    const r = await q('insert into locations (name, address, capacity, notes, position) values ($1,$2,$3,$4,(select coalesce(max(position), 0) + 1 from locations)) returning *', [d.name, d.address, d.capacity, d.notes]);
+    res.json({ location: r.rows[0] });
+  } catch (e) { throw /unique|duplicate/i.test(e.message) ? fail(409, 'Ya hay una ubicación con ese nombre') : e; }
+}));
+app.patch('/api/admin/locations/:id', ...admins, wrap(async (req, res) => {
+  if (!isUuid(req.params.id)) throw fail(404, 'No existe esa ubicación');
+  const cur = (await q('select * from locations where id = $1', [req.params.id])).rows[0];
+  if (!cur) throw fail(404, 'No existe esa ubicación');
+  const d = cleanLocation(req.body, cur);
+  try {
+    const r = await q('update locations set name = $1, address = $2, capacity = $3, notes = $4 where id = $5 returning *', [d.name, d.address, d.capacity, d.notes, cur.id]);
+    if (d.name !== cur.name) await q('update events set location = $1 where location = $2', [d.name, cur.name]);
+    res.json({ location: r.rows[0] });
+  } catch (e) { throw /unique|duplicate/i.test(e.message) ? fail(409, 'Ya hay una ubicación con ese nombre') : e; }
+}));
+app.delete('/api/admin/locations/:id', ...admins, wrap(async (req, res) => {   // las acciones que la usaban conservan el nombre escrito
+  if (!isUuid(req.params.id)) throw fail(404, 'No existe esa ubicación');
+  await q('delete from locations where id = $1', [req.params.id]);
+  res.json({ ok: true });
 }));
 
 for (const [route, table, hasColor] of [['types', 'event_types', true], ['sections', 'task_sections', false]]) {

@@ -4,6 +4,7 @@ import { dashboardView } from './dashboard.js';
 import { listView } from './list.js';
 import { eventView, newEventModal } from './event.js';
 import { adminView } from './admin.js';
+import { informesView } from './informes.js';
 
 const app = document.getElementById('app');
 const ROLE = { super_admin: 'Superadministrador', admin: 'Administrador', member: 'Equipo' };
@@ -66,18 +67,9 @@ function renderSide() {
     const list = evs.filter((e) => e.year === y);
     const open = openYears.has(y);
     const on = route.name === 'anio' && Number(route.arg) === y;
-    const items = [el('a', { class: `av-nav ${on ? 'on' : ''} ${open ? 'open' : ''}`, href: `#/anio/${y}`, 'aria-expanded': String(open), onclick: () => { if (open && on) openYears.delete(y); else openYears.add(y); } },
-      icon('cal'), el('span', {}, String(y)), el('small', { class: 'cnt' }, String(list.length)), icon('chev', 'chev'))];
-    if (open && list.length) {
-      const shown = list.slice(0, 40);
-      items.push(el('div', { class: 'av-sub' }, shown.map((e) => el('a', { class: `av-nav ${route.name === 'evento' && route.arg === e.id ? 'on' : ''}`, href: `#/evento/${e.id}`, title: e.name },
-        el('i', { class: 'dot', style: { '--c': STATUS_COLOR[e.status] } }), el('span', {}, e.name))), list.length > shown.length ? el('a', { class: 'av-nav more', href: `#/anio/${y}` }, `y ${list.length - shown.length} más…`) : null));
-    }
+    const items = [el('a', { class: `av-nav ${on ? 'on' : ''} ${open ? 'open' : ''}`, href: `#/anio/${y}`, 'aria-current': on ? 'page' : undefined },
+      icon('cal'), el('span', {}, String(y)), el('small', { class: 'cnt' }, String(list.length)))];
     return items;
-  });
-  const typeBlock = state.meta.types.map((t) => {
-    const n = evs.filter((e) => e.type_id === t.id).length;
-    return el('a', { class: `av-nav ${route.name === 'tipo' && route.arg === t.id ? 'on' : ''}`, href: `#/tipo/${t.id}` }, el('i', { class: 'dot', style: { '--c': t.color } }), el('span', {}, t.name), el('small', { class: 'cnt' }, String(n)));
   });
   const clientSel = el('select', { class: 'client', 'aria-label': 'Cliente', onchange: (e) => setClient(e.target.value) },
     el('option', { value: '' }, 'Todos los clientes'), state.meta.clients.filter((c) => !c.archived).map((c) => el('option', { value: c.id, selected: state.client === c.id }, c.name)));
@@ -86,9 +78,9 @@ function renderSide() {
     el('button', { class: 'av-acct', type: 'button', onclick: accountModal, 'aria-label': 'Mi cuenta' }, el('span', { class: 'av' }, initials(state.me)), el('span', { class: 'txt' }, el('b', {}, state.me.name || state.me.email), el('span', {}, ROLE[state.me.role]))),
     clientSel,
     nav('#/', 'Inicio', icon('home'), route.name === 'inicio' ? 'on' : ''),
+    nav('#/informes', 'Informes', icon('doc'), route.name === 'informes' ? 'on' : ''),
     el('div', { class: 'av-group' }, 'Años'), ...yearBlock,
-    el('div', { class: 'av-group' }, 'Tipos de acción'), ...typeBlock,
-    el('div', { class: 'av-grow' }),
+        el('div', { class: 'av-grow' }),
     el('div', { class: 'av-sep' }),
     state.me.is_admin ? nav('#/admin/equipo', 'Administración', icon('gear'), route.name === 'admin' ? 'on' : '') : null,
     el('button', { class: 'av-nav', type: 'button', onclick: logout }, icon('out'), el('span', {}, 'Salir')));
@@ -113,6 +105,7 @@ async function route() {
     if (r.name === 'inicio') node = await dashboardView();
     else if (r.name === 'anio') node = await listView({ year: Number(r.arg) });
     else if (r.name === 'tipo') node = await listView({ type: r.arg });
+    else if (r.name === 'informes') node = await informesView();
     else if (r.name === 'evento') node = await eventView(r.arg);
     else if (r.name === 'admin') node = state.me.is_admin ? await adminView(r.arg || 'equipo') : el('div', { class: 'page' }, el('p', {}, 'No tienes permiso para ver esto.'));
     else node = el('div', { class: 'page' }, el('h1', {}, 'No encontrado'), el('p', { class: 'muted' }, 'Esa página no existe. '), el('a', { href: '#/' }, 'Volver al inicio'));

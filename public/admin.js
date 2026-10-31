@@ -90,8 +90,35 @@ async function listsTab(box, rerender) {
     listEditor('Secciones de tareas', 'Agrupan las tareas dentro de cada acción (montaje, creatividades, personal…).', 'sections', state.meta.sections, false, rerender)));
 }
 
+function locationModal(l, rerender) {
+  const name = el('input', { type: 'text', maxlength: 80, value: l?.name || '', autofocus: true });
+  const address = el('input', { type: 'text', maxlength: 200, value: l?.address || '', placeholder: 'Calle, número, ciudad' });
+  const capacity = el('input', { type: 'number', min: 0, value: l?.capacity ?? '', placeholder: 'Personas' });
+  const notes = el('textarea', { rows: 4, maxlength: 2000, placeholder: 'Accesos, permisos, contacto, horarios de montaje…' }, l?.notes || '');
+  const err = el('div', { class: 'err', role: 'alert' });
+  openModal({ title: l ? 'Editar ubicación' : 'Nueva ubicación', wide: true, body: el('div', { class: 'fields' }, field('Nombre', name), field('Aforo máximo', capacity), field('Dirección', address), el('div', { class: 'field wide' }, el('label', {}, 'Notas'), notes), el('div', { class: 'field wide' }, err)),
+    actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Guardar', keep: true, run: async (_e, close) => {
+      err.textContent = '';
+      try { const body = { name: name.value, address: address.value, capacity: capacity.value, notes: notes.value }; await (l ? api('PATCH', `/api/admin/locations/${l.id}`, body) : api('POST', '/api/admin/locations', body)); close(); await refreshMeta(); rerender(); toast('Ubicación guardada'); }
+      catch (e) { err.textContent = e.message; return false; }
+    } }] });
+}
+
+async function locationsTab(box, rerender) {
+  const { locations } = await api('GET', '/api/admin/locations');
+  box.append(el('div', { class: 'adm-bar' }, el('p', { class: 'muted' }, 'Los sitios donde se montan las acciones. Aparecen al elegir la ubicación de una acción.'),
+    el('button', { class: 'btn', type: 'button', onclick: () => locationModal(null, rerender) }, icon('plus'), 'Nueva ubicación')),
+    locations.length ? el('div', { class: 'loc-grid' }, locations.map((l) => el('div', { class: 'card loc' },
+      el('h3', {}, l.name), el('div', { class: 'muted' }, l.address || 'Sin dirección'),
+      el('div', { class: 'loc-meta' }, el('span', {}, l.capacity != null ? `Aforo ${l.capacity.toLocaleString('es-ES')}` : 'Sin aforo'), el('span', {}, `${l.events} ${l.events === 1 ? 'acción' : 'acciones'}`)),
+      l.notes ? el('p', { class: 'loc-notes' }, l.notes) : null,
+      el('div', { class: 'actions' }, el('button', { class: 'btn ghost small', type: 'button', onclick: () => locationModal(l, rerender) }, 'Editar'),
+        el('button', { class: 'btn ghost small', type: 'button', onclick: async () => { if (!(await confirmBox('Borrar ubicación', `¿Borrar «${l.name}»? Las acciones que la usan conservan el nombre.`, 'Borrar', true))) return; try { await api('DELETE', `/api/admin/locations/${l.id}`); await refreshMeta(); rerender(); } catch (e) { toast(e.message, true); } } }, 'Borrar')))))
+      : el('div', { class: 'card empty-big' }, 'Todavía no hay ubicaciones.'));
+}
+
 export async function adminView(tab = 'equipo') {
-  const TABS = { equipo: ['Equipo', teamTab], clientes: ['Clientes', clientsTab], tipos: ['Tipos y secciones', listsTab] };
+  const TABS = { equipo: ['Equipo', teamTab], clientes: ['Clientes', clientsTab], tipos: ['Tipos y secciones', listsTab], ubicaciones: ['Ubicaciones', locationsTab] };
   if (!TABS[tab]) tab = 'equipo';
   const body = el('div');
   const page = el('div', { class: 'page', 'data-title': 'Administración' },

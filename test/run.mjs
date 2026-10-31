@@ -1,7 +1,7 @@
 // Pruebas de Avania Events contra una base de datos en memoria (PGlite): acceso, permisos, acciones, tareas, panel y administración.
 process.env.EVENTS_PGLITE = '1';
 process.env.EVENTS_NO_LISTEN = '1';
-delete process.env.DATABASE_URL;
+process.env.DATABASE_URL = '';   // vacío (no borrado): dotenv no lo rellena desde .env y las pruebas nunca tocan la base real
 const { migrate } = await import('../src/migrate.js');
 const { q, closeDb } = await import('../src/db.js');
 const { hashPassword } = await import('../src/crypto.js');

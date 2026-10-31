@@ -17,11 +17,12 @@ export async function dashboardView() {
     el('div', { class: 'tiles' },
       el('div', { class: 'card tile hero' }, el('span', { class: 'val' }, String(c.en_proceso)), el('span', { class: 'lbl' }, 'Acciones en proceso')),
       el('div', { class: 'card tile' }, el('span', { class: 'val' }, String(c.proximas)), el('span', { class: 'lbl' }, 'Empiezan en los próximos 30 días')),
-      el('div', { class: `card tile${c.tareas_vencidas ? ' warn' : ''}` }, el('span', { class: 'val' }, String(c.tareas_vencidas)), el('span', { class: 'lbl' }, 'Tareas con la fecha pasada'))),
+      el('div', { class: `card tile${c.tareas_vencidas ? ' warn' : ''}` }, el('span', { class: 'val' }, String(c.tareas_vencidas)), el('span', { class: 'lbl' }, 'Tareas con la fecha pasada')),
+      el('div', { class: 'card tile' }, el('span', { class: 'val' }, String(c.por_facturar)), el('span', { class: 'lbl' }, `${c.por_facturar === 1 ? 'Acción terminada' : 'Acciones terminadas'} sin facturar`))),
     el('div', { class: 'cols' },
       panel('En proceso', d.inProgress.map((e) => eventRow(e)), 'No hay ninguna acción en proceso.'),
       panel('Próximas', d.upcoming.map((e) => eventRow(e)), 'No hay acciones próximas.'),
       panel('Mis tareas', d.myTasks.map((t) => el('a', { class: `rowlink${t.overdue ? ' late' : ''}`, href: `#/evento/${t.event_id}` }, el('span', { class: 'nm' }, t.title), el('span', { class: 'ref' }, t.ref), el('span', { class: 'meta' }, t.due_on ? (t.overdue ? `venció el ${fmtDate(t.due_on)}` : fmtDate(t.due_on)) : 'sin fecha'))), 'No tienes tareas pendientes.'),
-      panel('Terminadas y sin facturar', d.toInvoice.map((e) => el('a', { class: 'rowlink', href: `#/evento/${e.id}` }, el('span', { class: 'ref' }, e.ref), el('span', { class: 'nm' }, e.name), el('span', { class: 'meta' }, fmtMoney(e.cost)))), 'No queda nada por facturar.')));
+      panel('Terminadas y sin facturar', d.toInvoice.map((e) => el('a', { class: 'rowlink', href: `#/evento/${e.id}` }, el('span', { class: 'ref' }, e.ref), el('span', { class: 'nm' }, e.name))), 'No queda nada por facturar.')));
   return page;
 }
