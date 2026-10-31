@@ -262,6 +262,24 @@ console.log('Marca de enviado a producción');
   await admin.call('DELETE', `/api/events/${evp.id}?hard=1`);
 }
 
+console.log('Análisis de resultados (Excel)');
+{
+  const { default: ExcelJS } = await import('exceljs');
+  const { analyzeResults, isResultsFile } = await import('../src/results.js');
+  const wb = new ExcelJS.Workbook();
+  const d = wb.addWorksheet('Datos');
+  d.addRow([]); d.addRow(['DATOS DISFRUTONES - PRUEBA 2026']); d.addRow(['Del 1 al 3 de Mayo de 2026']); d.addRow([]);
+  d.addRow(['DÍA', 'Nuevos socios', 'Ya eran Socios', 'Participaciones', 'Cash']); d.addRow([1, 10, 20, 30, 500]); d.addRow([2, 5, 5, 10, 300]);
+  d.addRow(['TOTAL Azafatas', 15, 25, 40, 800]); d.addRow(['APP', 12, 20, 55, 0]); d.addRow(['TOTAL', 12, 20, 55, 800]);
+  wb.addWorksheet('Comentarios generales').addRows([['COMENTARIOS GENERALES'], ['Que haya más regalos para los socios.']]);
+  wb.addWorksheet('Incidencias').addRows([['INCIDENCIAS'], ['La app falló el segundo día y no llegaba el correo de verificación.']]);
+  const r = await analyzeResults(Buffer.from(await wb.xlsx.writeBuffer()));
+  ok('lee la cifra de participantes del TOTAL final', r.participants === 55);
+  ok('recoge incidencias y comentarios', r.incidents.length === 1 && r.comments.length === 1);
+  ok('el resumen no trae importes', !/500|800|cash/i.test(r.summary) && /participaciones 40/.test(r.summary));
+  ok('reconoce el nombre del archivo', isResultsFile('JOVENTURA - Datos, Comentarios G. e Incidencias DÍA DE LA MADRE 2026.xlsx') && !isResultsFile('presupuesto.pdf'));
+}
+
 console.log('Salud');
 ok('/api/health', (await new Client().call('GET', '/api/health')).j.ok === true);
 ok('una ruta rara de la API → 404', (await ana.call('GET', '/api/nada')).s === 404);

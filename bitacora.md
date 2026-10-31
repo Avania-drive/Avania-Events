@@ -37,3 +37,8 @@
 - **Traspaso Notion → Drive**: 134 adjuntos → 131 subidos + 3 ya estaban, 0 fallos; 133 enlazados a 98 tareas (81 en Documentación, 52 en Creatividades). Estructura: unidad compartida / Cliente / Año / «REF NOMBRE» / Creatividades · Documentación · Producción · Fotografías.
 - **Tareas tipo** al crear una acción: las variantes del mismo nombre se unen («Velero y A3», «Veleros y A3», «A3 y veleros»…).
 - Tests: ya no tocan Drive, Notion ni correo reales (vaciar variables en `test/run.mjs`); se retiraron 4 carpetas de prueba que un test había creado en Drive. 100 pruebas correctas.
+
+## 31-oct-2026 (noche) — Análisis de resultados de Joventura, producción, avisos
+- **Análisis de resultados**: los Excel «JOVENTURA - Datos, Comentarios G. e Incidencias…» de Documentación tienen botón «Análisis de resultados» (ficha → Documentación, y en «Ampliar tarea»). Lee las hojas de datos, comentarios e incidencias (`src/results.js`, exceljs), muestra la vista previa y rellena el cierre: participantes/asistencia, resultado/KPI (sin importes), incidencias, comentarios de clientes y el enlace «Archivo de resultados» (también en el resumen lateral). Lo ya escrito no se borra. Aplicado a ALB-005, 007, 008, 009, 011 y 017 con `scripts/aplicar-resultados.mjs`.
+- **Enviar a producción**: Drive en paralelo y subcarpetas en caché, aviso «Enviando» difuminado con animación, marca verde «Enviado a producción 31/10» en las tareas (sql/009), buzón propio `PROD_SMTP_*` (marketing@avania.es).
+- 106 pruebas.

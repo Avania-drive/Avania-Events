@@ -7,8 +7,9 @@ import { q } from './db.js';
 import { hashPassword, verifyPassword, randomToken, sha256 } from './crypto.js';
 import { COOKIE, parseCookies, createSession, clearCookie, loadSession, requireUser, requireReady, requireRole, publicUser, isAdmin, tooMany } from './auth.js';
 import { auditMiddleware } from './audit.js';
-import { driveEnabled, ensureFolder, uploadFile, listChildren, copyFile, shareWith, folderUrl, ACTION_SUBFOLDERS } from './drive.js';
+import { downloadFile, driveEnabled, ensureFolder, uploadFile, listChildren, copyFile, shareWith, folderUrl, ACTION_SUBFOLDERS } from './drive.js';
 import { sendMail, mailEnabled } from './mailer.js';
+import { analyzeResults, isResultsFile } from './results.js';
 import { EVENT_STATUS, TASK_STATUS, PRIORITIES, cleanEvent, cleanTask, cleanLinks, isUuid, yearFor } from './domain.js';
 import { sendInvite } from './invite.js';
 
@@ -356,6 +357,17 @@ app.post('/api/events/:id/photos', ...staff, express.raw({ type: '*/*', limit: '
   const f = await uploadFile(await ensureFolder(root, 'Fotografías'), name, req.body, req.headers['content-type']?.split(';')[0] || 'application/octet-stream');
   const row = (await q(`insert into task_files (task_id, event_id, name, folder, drive_file_id, size, mime, created_by) values (null,$1,$2,'Fotografías',$3,$4,$5,$6) on conflict (event_id, drive_file_id) where task_id is null do update set name = excluded.name returning id, name, size`, [e.id, name, f.id, req.body.length, req.headers['content-type'] || '', req.user.id])).rows[0];
   res.json({ photo: { ...row, url: `https://drive.google.com/file/d/${f.id}/view`, thumb: `https://drive.google.com/thumbnail?id=${f.id}&sz=w320` } });
+}));
+
+// Análisis de un Excel de resultados (Datos, Comentarios e Incidencias) para rellenar el cierre del evento
+app.get('/api/task-files/:id/analisis', ...staff, wrap(async (req, res) => {
+  if (!isUuid(req.params.id)) throw fail(404, 'No existe ese archivo');
+  const f = (await q('select f.id, f.name, f.drive_file_id, f.event_id from task_files f where f.id = $1', [req.params.id])).rows[0];
+  if (!f) throw fail(404, 'No existe ese archivo');
+  if (!isResultsFile(f.name)) throw fail(400, 'Este archivo no parece un Excel de resultados');
+  if (!driveEnabled()) throw fail(503, 'Google Drive no está configurado');
+  let a; try { a = await analyzeResults(await downloadFile(f.drive_file_id)); } catch (e) { console.error('[resultados]', e.message); throw fail(422, 'No se ha podido leer ese Excel'); }
+  res.json({ file: { id: f.id, name: f.name, url: `https://drive.google.com/file/d/${f.drive_file_id}/view`, event_id: f.event_id }, analysis: a });
 }));
 
 app.delete('/api/task-files/:id', ...staff, wrap(async (req, res) => {   // solo quita el vínculo con la tarea; el archivo sigue en Drive

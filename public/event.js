@@ -47,6 +47,30 @@ function sendingOverlay() {
   return o;
 }
 
+// Excel de resultados (Datos, Comentarios e Incidencias): se analiza y se vuelca al cierre del evento
+const isResultsName = (n) => /\.xlsx$/i.test(n || '') && /(datos.*comentarios|incidencias|resultados)/i.test(n || '');
+async function resultsModal(e, file, done) {
+  let r;
+  try { r = await api('GET', `/api/task-files/${file.id}/analisis`); } catch (er) { return toast(er.message, true); }
+  const a = r.analysis, bullets = (l) => l.map((x) => `• ${x}`).join('\n');
+  const summary = [a.summary, a.participants != null ? `Participantes: ${a.participants.toLocaleString('es-ES')} (${a.participants_label}).` : ''].filter(Boolean).join('\n');
+  const merge = (cur, add) => (!add ? cur : !cur ? add : cur.includes(add) ? cur : `${cur}\n\n${add}`);
+  const preview = (title, txt) => (txt ? el('div', { class: 'rs-block' }, el('h4', {}, title), el('pre', {}, txt)) : null);
+  openModal({ title: 'Análisis de resultados', wide: true,
+    body: el('div', { class: 'rs' },
+      el('p', { class: 'muted' }, el('a', { href: file.url, target: '_blank', rel: 'noopener' }, file.name), a.title ? ` · ${a.title}` : ''),
+      a.participants != null ? el('div', { class: 'rs-num' }, el('strong', {}, a.participants.toLocaleString('es-ES')), el('span', {}, `participantes / asistencia · ${a.participants_label}`)) : el('p', { class: 'muted' }, 'No he encontrado la cifra de participantes en el Excel.'),
+      preview('Resumen de datos (irá a «Resultado / KPI»)', a.summary), preview(`Incidencias (${a.incidents.length})`, bullets(a.incidents)), preview(`Comentarios de los clientes (${a.comments.length})`, bullets(a.comments)),
+      el('p', { class: 'muted' }, 'Al aplicarlo se rellenan el cierre del evento y el enlace «Archivo de resultados». Si ya había texto escrito, esto se añade debajo sin borrarlo.')),
+    actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Aplicar al cierre del evento', keep: true, run: async (_e, close) => {
+      try {
+        const links = [...(e.links || []).filter((l) => l.name !== 'Archivo de resultados'), { name: 'Archivo de resultados', url: file.url }];
+        await api('PATCH', `/api/events/${e.id}`, { ...(a.participants != null ? { participants: a.participants } : {}), kpi_result: merge(e.kpi_result || '', a.summary), incidents: merge(e.incidents || '', bullets(a.incidents)), improvements: merge(e.improvements || '', a.comments.length ? `Comentarios de los clientes:\n${bullets(a.comments)}` : ''), links });
+        close(); toast('Cierre del evento rellenado'); done?.();
+      } catch (er) { toast(er.message, true); return false; }
+    } }] });
+}
+
 // Enviar a producción: se marcan las piezas aprobadas de Creatividades, se elige proveedor y se le manda por correo el enlace a la carpeta Producción
 async function productionModal(e) {
   let d, provs;
@@ -220,7 +244,7 @@ export async function eventView(id, openTaskId = null) {
         drawFiles(); drawTasks();
       } });
       filesBox.replaceChildren(
-        t.files?.length ? el('ul', { class: 'flist' }, t.files.map((f) => el('li', {}, icon('clip'), el('a', { href: f.url, target: '_blank', rel: 'noopener' }, f.name), el('small', { class: 'muted' }, `${f.folder}${f.size ? ` · ${sizeOf(f.size)}` : ''}`),
+        t.files?.length ? el('ul', { class: 'flist' }, t.files.map((f) => el('li', {}, icon('clip'), el('a', { href: f.url, target: '_blank', rel: 'noopener' }, f.name), el('small', { class: 'muted' }, `${f.folder}${f.size ? ` · ${sizeOf(f.size)}` : ''}`), isResultsName(f.name) ? el('button', { class: 'btn small', type: 'button', onclick: () => resultsModal(e, f, () => window.dispatchEvent(new HashChangeEvent('hashchange'))) }, 'Análisis de resultados') : null,
           el('button', { class: 'btn ghost small', type: 'button', 'aria-label': `Quitar ${f.name} de la tarea`, onclick: async () => { if (!(await confirmBox('Quitar archivo', `¿Quitar «${f.name}» de esta tarea? El archivo se queda en Drive.`, 'Quitar'))) return; try { await api('DELETE', `/api/task-files/${f.id}`); t.files = t.files.filter((x) => x.id !== f.id); drawFiles(); drawTasks(); } catch (er) { toast(er.message, true); } } }, 'Quitar')))) : el('p', { class: 'muted', style: { margin: '0 0 8px' } }, 'Esta tarea no tiene archivos.'),
         data.drive_enabled ? el('div', { class: 'tupload' }, dest, el('button', { class: 'btn small', type: 'button', onclick: () => pick.click() }, icon('plus'), 'Subir archivo'), pick, msg) : el('p', { class: 'muted' }, 'Google Drive no está configurado en el servidor.'));
     };
@@ -297,6 +321,16 @@ export async function eventView(id, openTaskId = null) {
   }
   drawPhotos();
 
+  // ── Documentación: archivos de las tareas guardados en la carpeta Documentación (con análisis de los Excel de resultados) ──
+  const resultsLink = (e.links || []).find((l) => l.name === 'Archivo de resultados');
+  const docsBox = el('div', { class: 'docs' });
+  const drawDocs = () => {
+    const docs = tasks.flatMap((t) => (t.files || []).filter((f) => f.folder === 'Documentación').map((f) => ({ ...f, task: t.title })));
+    docsBox.replaceChildren(docs.length ? el('ul', { class: 'flist' }, docs.map((f) => el('li', {}, icon('clip'), el('a', { href: f.url, target: '_blank', rel: 'noopener' }, f.name), el('small', { class: 'muted' }, f.task),
+      isResultsName(f.name) ? el('button', { class: 'btn small', type: 'button', onclick: () => resultsModal(e, f, () => window.dispatchEvent(new HashChangeEvent('hashchange'))) }, 'Análisis de resultados') : null))) : el('p', { class: 'muted' }, 'Todavía no hay documentos en las tareas de esta acción.'));
+  };
+  drawDocs();
+
   // ── Valoración ──
   const stars = el('div', { class: 'stars', role: 'group', 'aria-label': 'Valoración de 1 a 5' });
   const drawStars = () => stars.replaceChildren(...[1, 2, 3, 4, 5].map((n) => el('button', { type: 'button', class: n <= (e.rating || 0) ? 'on' : '', 'aria-label': `${n} de 5`, 'aria-pressed': String(n === e.rating), onclick: () => { set('rating', e.rating === n ? null : n); drawStars(); } }, icon('star'))));
@@ -310,7 +344,7 @@ export async function eventView(id, openTaskId = null) {
     const tcost = l.reduce((n, t) => n + (t.cost || 0), 0);
     const row = (k, v) => [el('dt', {}, k), el('dd', {}, v)];
     summaryBox.replaceChildren(...row('Estado', statusBadge(state.meta.eventStatus[e.status], STATUS_COLOR[e.status])), ...row('Tareas hechas', `${done} de ${l.length}`), ...row('Tareas vencidas', String(late)),
-      ...row('Coste de la acción', !unlocked ? lockedChip() : e.cost != null ? fmtMoney(e.cost) : '—'), ...row('Coste de las tareas', !unlocked ? lockedChip() : tcost ? fmtMoney(tcost) : '—'), ...row('Facturado', e.invoiced ? 'Sí' : 'No'));
+      ...row('Coste de la acción', !unlocked ? lockedChip() : e.cost != null ? fmtMoney(e.cost) : '—'), ...row('Coste de las tareas', !unlocked ? lockedChip() : tcost ? fmtMoney(tcost) : '—'), ...row('Facturado', e.invoiced ? 'Sí' : 'No'), ...(resultsLink ? row('Resultados', el('a', { href: resultsLink.url, target: '_blank', rel: 'noopener' }, 'Archivo de resultados')) : []));
   }
   async function refreshLog() {
     try { log = (await api('GET', `/api/events/${id}/log`)).log; } catch { /* se queda lo que había */ }
@@ -344,8 +378,9 @@ export async function eventView(id, openTaskId = null) {
         el('section', { class: 'card sec' }, el('h3', {}, 'Tareas', el('small', { class: 'muted' }, 'lo que hay que hacer para que salga adelante')), progress, tasksBox,
           el('div', { class: 'addtask' }, newTitle, newSection, el('button', { class: 'btn', type: 'button', onclick: () => addTask() }, icon('plus'), 'Añadir'))),
         el('section', { class: 'card sec' }, el('h3', {}, 'Briefing'), el('div', { class: 'fields' }, area('objective', 'Objetivo', 'wide', 3), el('div', { class: 'field wide' }, el('label', {}, 'Público objetivo'), audBox))),
+        el('section', { class: 'card sec' }, el('h3', {}, 'Documentación', el('small', { class: 'muted' }, 'presupuestos, bases, resultados…')), docsBox),
         el('section', { class: 'card sec' }, el('h3', {}, 'Cierre del evento', el('small', { class: 'muted' }, 'para rellenar cuando termine')), el('div', { class: 'fields' },
-          field('Participantes / asistencia', el('input', { type: 'number', min: 0, value: e.participants ?? '', onchange: (ev) => set('participants', ev.target.value === '' ? null : Number(ev.target.value)) })),
+          (() => { const f = field('Participantes / asistencia', el('input', { type: 'number', min: 0, value: e.participants ?? '', onchange: (ev) => set('participants', ev.target.value === '' ? null : Number(ev.target.value)) })); if (resultsLink) f.append(el('a', { class: 'rs-link', href: resultsLink.url, target: '_blank', rel: 'noopener' }, 'Archivo de resultados')); return f; })(),
           field('Valoración (1 a 5)', stars),
           area('kpi_result', 'Resultado / KPI', 'wide', 3), area('sponsors', 'Patrocinadores', 'wide', 2), area('incidents', 'Incidencias', 'wide', 3), area('improvements', 'Qué mejorar la próxima vez', 'wide', 3),
           el('div', { class: 'field wide note-next' }, el('label', {}, 'Notas para el año que viene'), el('textarea', { rows: 4, oninput: (ev) => set('notes_next', ev.target.value) }, e.notes_next ?? '')))),

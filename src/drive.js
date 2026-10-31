@@ -65,3 +65,10 @@ export const copyFile = (id, parentId, name) => call('POST', `/files/${id}/copy`
 /** Da acceso de lectura a una persona concreta (sin aviso de Google; el aviso lo mandamos nosotros). */
 export const shareWith = (id, email, role = 'reader') => call('POST', `/files/${id}/permissions`, { params: { sendNotificationEmail: 'false', fields: 'id' }, body: { type: 'user', role, emailAddress: email } });
 export const folderUrl = (id) => `https://drive.google.com/drive/folders/${id}`;
+
+/** Descarga el contenido de un archivo (Buffer). */
+export async function downloadFile(id) {
+  const r = await fetch(`${API}/files/${id}?alt=media&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${await token()}` }, signal: AbortSignal.timeout(120_000) });
+  if (!r.ok) throw new Error(`Google Drive respondió ${r.status}`);
+  return Buffer.from(await r.arrayBuffer());
+}
