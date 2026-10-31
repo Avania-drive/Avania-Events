@@ -437,10 +437,10 @@ export async function eventView(id, openTaskId = null) {
     const results = all.filter((f) => isResultsName(f.name)), rest = all.filter((f) => !isResultsName(f.name));
     const row = (f, withTask = true) => el('li', {}, icon('clip'), el('a', { href: f.url, target: '_blank', rel: 'noopener', title: f.name }, f.name), withTask ? el('small', { class: 'muted' }, f.task) : null);
     const folders = ['Creatividades', 'Documentación', 'Producción'].map((name) => ({ name, files: rest.filter((f) => f.folder === name).sort((x, y) => x.name.localeCompare(y.name, 'es')) })).filter((g) => g.files.length);
-    docsBox.replaceChildren(
+    docsBox.replaceChildren(...[
       results.length ? el('div', { class: 'docs-results' }, el('h4', {}, 'Informe de resultados'), el('ul', { class: 'flist' }, results.map((f) => el('li', { class: 'big' }, icon('clip'), el('a', { href: f.url, target: '_blank', rel: 'noopener', title: f.name }, f.name), el('button', { class: 'btn small', type: 'button', onclick: () => resultsModal(e, f, () => window.dispatchEvent(new HashChangeEvent('hashchange'))) }, 'Análisis de resultados'))))) : null,
       folders.length ? el('div', { class: 'docs-folders' }, folders.map((g) => { const d = el('details', { class: 'dfolder', ontoggle: () => { if (d.open) openFolders.add(g.name); else openFolders.delete(g.name); } }, el('summary', {}, el('span', { class: 'fico' }, '📁'), el('b', {}, g.name), el('span', { class: 'pend-n' }, String(g.files.length))), el('ul', { class: 'flist' }, g.files.map((f) => row(f)))); d.open = openFolders.has(g.name); return d; }))
-        : (results.length ? null : el('p', { class: 'muted' }, 'Todavía no hay documentos en esta acción.')));
+        : (results.length ? null : el('p', { class: 'muted' }, 'Todavía no hay documentos en esta acción.'))].filter(Boolean));   // sin null: replaceChildren lo pintaría como texto
   };
   drawDocs();
 
@@ -469,14 +469,14 @@ export async function eventView(id, openTaskId = null) {
 
   // ── Página ──
   const page = el('div', { class: 'page', 'data-title': e.name },
-    el('p', {}, el('a', { href: `#/anio/${e.year}`, class: 'muted' }, `← Acciones ${e.year}`)),
-    el('div', { class: 'evt-h' }, el('div', { class: 'line' }, el('span', { class: 'ref' }, e.ref), el('span', { class: 'cli', style: { '--c': client?.color } }, client?.name || ''), saved,
-      el('span', { style: { marginLeft: 'auto', display: 'flex', gap: '8px' } },
+    el('div', { class: 'evt-h' },
+      el('a', { href: `#/anio/${e.year}`, class: 'evt-back', title: `Volver a Acciones ${e.year}`, 'aria-label': `Volver a Acciones ${e.year}` }, '←'),
+      el('span', { class: 'cli', style: { '--c': client?.color } }, client?.name || ''), el('span', { class: 'ref' }, e.ref), title, saved,
+      el('span', { class: 'evt-acts' },
         el('button', { class: 'btn ghost small', type: 'button', onclick: () => cloneModal(e) }, icon('copy'), 'Clonar'),
         e.drive_url ? el('button', { class: 'btn small', type: 'button', onclick: () => productionModal(e) }, 'Enviar a producción') : null,
         el('button', { class: 'btn ghost small', type: 'button', onclick: async () => { if (!(await confirmBox('Archivar acción', `¿Archivar «${e.name}»? Dejará de salir en las listas (un administrador puede borrarla del todo).`, 'Archivar'))) return; await api('DELETE', `/api/events/${id}`); await loadEvents(); toast('Acción archivada'); location.hash = `#/anio/${e.year}`; } }, 'Archivar'),
         state.me.is_admin ? el('button', { class: 'btn danger small', type: 'button', onclick: async () => { if (!(await confirmBox('Borrar para siempre', `¿Borrar «${e.name}» con todas sus tareas? No se puede deshacer.`, 'Borrar para siempre', true))) return; await api('DELETE', `/api/events/${id}?hard=1`); await loadEvents(); toast('Acción borrada'); location.hash = `#/anio/${e.year}`; } }, 'Borrar') : null)),
-      title),
     lockBanner(e, lock, state.me.role === 'super_admin'),
     el('div', { class: 'evt' },
       el('div', {},

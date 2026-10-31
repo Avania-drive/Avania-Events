@@ -498,3 +498,20 @@ main.auth-card .err { min-height: 18px; }
 /* Móvil: filas de edición (enlaces, ubicaciones…) en varias líneas */
 .editrow input { min-width: 0; }
 @media (max-width: 860px) { .editrow { flex-wrap: wrap; } .editrow input[type=text], .editrow input[type=url] { flex: 1 1 100% !important; max-width: none !important; } .card.sec { min-width: 0; } .card.sec a, .card.sec .nm { overflow-wrap: anywhere; } }
+
+/* Cabecera de la ficha: una sola línea y fija al hacer scroll (cliente · ALB-000 · nombre ... botones) */
+.evt-h { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: 12px; margin: -24px -28px 16px; padding: 12px 28px; background: var(--page); border-bottom: 1px solid var(--line); }
+.evt-h .evt-back { font-size: 20px; line-height: 1; text-decoration: none; color: var(--muted); padding: 4px 6px; border-radius: 8px; flex: none; }
+.evt-h .evt-back:hover { background: var(--soft); color: var(--ink); }
+.evt-h .cli { font-size: 13.5px; padding: 3px 10px; flex: none; }
+.evt-h .ref { font-size: 15px; flex: none; color: var(--ink); }
+.evt-h input.title[type=text] { flex: 1 1 200px; min-width: 0; width: auto; margin: 0; font-size: 22px !important; font-weight: 650; text-overflow: ellipsis; border: 1px solid transparent !important; background: transparent !important; padding: 4px 8px !important; box-shadow: none; }
+.evt-h input.title[type=text]:hover, .evt-h input.title[type=text]:focus { border-color: var(--line) !important; background: var(--panel) !important; }
+.evt-h .saved { flex: none; }
+.evt-h .evt-acts { margin-left: auto; display: flex; gap: 8px; flex: none; }
+@media (max-width: 860px) {
+  .evt-h { flex-wrap: wrap; gap: 6px 8px; margin: -16px -14px 12px; padding: 8px 14px; top: var(--av-top-h, 53px); }
+  .evt-h input.title[type=text] { order: 5; flex: 1 1 100%; font-size: 19px !important; }
+  .evt-h .evt-acts { order: 6; flex: 1 1 100%; margin-left: 0; flex-wrap: wrap; }
+  .evt-h .saved { order: 4; margin-left: auto; }
+}
