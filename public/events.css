@@ -592,3 +592,21 @@ main.auth-card .err { min-height: 18px; }
   .task .tmeta .costbox { gap: 2px; }
 }
 @media (min-width: 861px) { .task .tmeta .stsel { width: 120px; } .task .tmeta input[type=date] { width: 124px; } .task .tmeta .costbox input[type=number], .task .tmeta input[type=number] { width: 88px; } }
+
+/* Fila de tarea (5.ª pasada): todos los controles con la misma altura y la línea de datos repartida a todo el ancho, igual que nombre + cartel */
+@media (min-width: 861px) {
+  .task .tt, .task .tmeta select, .task .tmeta input, .task .tmeta .clipbtn { height: 32px; min-height: 32px; box-sizing: border-box; }
+  .task .tt { max-width: none; }
+  .task .tmeta { display: flex; flex-wrap: nowrap; gap: 6px; width: 100%; align-items: center; }
+  .task .tmeta .stsel { flex: 1.25 1 0; width: auto; min-width: 0; max-width: none; }
+  .task .tmeta select:not(.stsel) { flex: 1 1 0; width: auto; min-width: 0; max-width: none; }
+  .task .tmeta input[type=date] { flex: 1.25 1 0; width: auto; min-width: 0; max-width: none; }
+  .task .tmeta .costbox { flex: 1.1 1 0; min-width: 0; display: flex; align-items: center; gap: 4px; }
+  .task .tmeta .costbox input[type=number] { flex: 1; width: 100%; min-width: 0; max-width: none; }
+  .task .tmeta .clipbtn { flex: none; margin-left: 0; }
+}
+@media (min-width: 861px) {
+  .task .tmeta .stsel { flex: 1.2 1 0; } .task .tmeta select:not(.stsel) { flex: .95 1 0; } .task .tmeta input[type=date] { flex: 1.55 1 0; padding-left: 8px; padding-right: 6px; } .task .tmeta .costbox { flex: 1 1 0; }
+  .task .tmeta .clipbtn { padding: 0 9px; }
+}
+@media (min-width: 861px) { .task .tmeta .stsel { flex: 1.4 1 0; padding-left: 8px; padding-right: 15px; } .task .tmeta select:not(.stsel) { flex: .9 1 0; } .task .tmeta input[type=date] { flex: 1.4 1 0; } }
