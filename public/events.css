@@ -271,3 +271,12 @@ input.title:hover { border-color: var(--line); }
 .aud-opts .opt { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
 .aud-opts .opt:hover { border-color: var(--accent); }
 .aud-opts .opt.on { background: var(--soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+/* Tareas más compactas y botón «Ampliar tarea» */
+.task { padding: 4px 4px; gap: 8px; }
+.task .tt { font-size: 13px; padding: 3px 6px; }
+.task .tmeta { gap: 5px; }
+.task .tmeta select, .task .tmeta input { font-size: 12px; min-height: 26px; padding: 2px 6px; }
+.task .tmeta input[type=number] { width: 70px; }
+.task .tmeta .stsel { padding-right: 18px; }
+.task .more { white-space: nowrap; font-size: 12px; min-height: 26px; padding: 2px 10px; }
