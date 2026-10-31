@@ -299,13 +299,12 @@ export async function eventView(id, openTaskId = null) {
       el('input', { type: 'checkbox', checked: t.status === 'finalizada', 'aria-label': `Hecha: ${t.title}`, onchange: (ev) => upTask(t, { status: ev.target.checked ? 'finalizada' : 'sin_empezar' }) }),
       el('input', { class: 'tt', type: 'text', value: t.title, maxlength: 300, 'aria-label': 'Tarea', onchange: (ev) => { if (!ev.target.value.trim()) { ev.target.value = t.title; return; } upTask(t, { title: ev.target.value }); } }),
       el('div', { class: 'tmeta' },
-        sentChip(t),
         select(Object.entries(state.meta.taskStatus), t.status, { class: 'stsel', 'aria-label': 'Estado de la tarea', style: { '--c': TASK_COLOR[t.status] }, onchange: (ev) => upTask(t, { status: ev.target.value }) }),
         select([['', 'Sin responsable'], ...state.meta.users.map((u) => [u.id, firstName(u)])], t.owner_id || '', { 'aria-label': 'Responsable de la tarea', onchange: (ev) => upTask(t, { owner_id: ev.target.value || null }) }),
         el('input', { type: 'date', value: t.due_on || '', 'aria-label': 'Fecha límite', onchange: (ev) => upTask(t, { due_on: ev.target.value || null }) }),
         !unlocked ? null : el('label', { class: 'costbox' }, el('input', { type: 'number', min: 0, step: '0.01', placeholder: '0', value: t.cost ?? '', 'aria-label': 'Coste de la tarea en euros', onchange: (ev) => upTask(t, { cost: ev.target.value === '' ? null : ev.target.value }) }), el('span', {}, '€')),
-        el('button', { class: `clipbtn${t.files?.length ? ' has' : ''}`, type: 'button', title: t.files?.length ? `${t.files.length} archivo${t.files.length === 1 ? '' : 's'}: pulsa para verlos` : 'Sin archivos: pulsa para añadir', 'aria-label': t.files?.length ? `${t.files.length} archivos` : 'Sin archivos', onclick: () => taskModal(t) }, icon('clip'), t.files?.length ? String(t.files.length) : null),
-        el('button', { class: 'btn ghost small more', type: 'button', onclick: () => taskModal(t) }, 'Ampliar tarea')));
+        el('button', { class: `clipbtn${t.files?.length ? ' has' : ''}`, type: 'button', title: t.files?.length ? `${t.files.length} archivo${t.files.length === 1 ? '' : 's'}: pulsa para ampliar la tarea y verlos` : 'Ampliar la tarea (sin archivos todavía)', 'aria-label': t.files?.length ? `Ampliar tarea (${t.files.length} archivos)` : 'Ampliar tarea', onclick: () => taskModal(t) }, icon('clip'), t.files?.length ? el('b', {}, String(t.files.length)) : null, el('span', { class: 'amp' }, t.files?.length ? '/ Ampliar' : 'Ampliar')),
+        sentChip(t)));
   };
   function drawTasks() {
     const roots = live().filter((t) => !t.parent_id);
