@@ -515,3 +515,5 @@ main.auth-card .err { min-height: 18px; }
   .evt-h .evt-acts { order: 6; flex: 1 1 100%; margin-left: 0; flex-wrap: wrap; }
   .evt-h .saved { order: 4; margin-left: auto; }
 }
+
+.fields > p.sentline { grid-column: 1 / -1; margin: 0; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, #16a34a 12%, var(--panel)); color: var(--ink); font-size: 13px; letter-spacing: .02em; }

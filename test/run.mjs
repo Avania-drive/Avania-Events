@@ -263,6 +263,7 @@ console.log('Marca de enviado a producción');
   await q("insert into production_sends (event_id, provider_name, sent_to, sender_name, files, file_ids) values ($1,'Top Impresión','x@y.es','Ana','[\"velero.pdf\"]'::jsonb,'[\"FILE1\"]'::jsonb)", [evp.id]);
   const after = (await ana.call('GET', `/api/events/${evp.id}`)).j.tasks;
   ok('la tarea con la pieza enviada lleva la marca y la fecha', after.find((t) => t.title === 'Veleros').sent_to_production?.date === new Date().toISOString().slice(0, 10) || /^\d{4}-\d{2}-\d{2}$/.test(after.find((t) => t.title === 'Veleros').sent_to_production?.date));
+  ok('la tarea enviada dice quién la envió', after.find((t) => t.title === 'Veleros').sent_to_production?.by === 'Ana' && after.find((t) => t.title === 'Veleros').sent_to_production?.provider === 'Top Impresión');
   ok('la otra tarea no', after.find((t) => t.title === 'Otra').sent_to_production === null);
   await admin.call('DELETE', `/api/events/${evp.id}?hard=1`);
 }
