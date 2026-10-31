@@ -30,9 +30,9 @@ export async function loadSession(req, _res, next) {
     const token = parseCookies(req)[COOKIE];
     if (token) {
       const r = await q(
-        `select s.id sid, u.* from sessions s join team_users u on u.id = s.user_id
+        `select s.id sid, s.reports_until, u.* from sessions s join team_users u on u.id = s.user_id
          where s.token_hash = $1 and s.expires_at > now() and u.active`, [sha256(token)]);
-      if (r.rows[0]) { const { sid, ...user } = r.rows[0]; req.user = user; req.session = { id: sid }; }
+      if (r.rows[0]) { const { sid, reports_until, ...user } = r.rows[0]; req.user = user; req.session = { id: sid, reports_until }; }
     }
     next();
   } catch (e) { next(e); }

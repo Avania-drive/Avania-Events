@@ -117,6 +117,25 @@ const LIST_SQL = `
     from tasks group by event_id
   ) t on t.event_id = e.id`;
 
+// ───────── Informes: piden usuario y contraseña (se desbloquean 30 minutos en esa sesión) ─────────
+const REPORTS_MINUTES = 30;
+const reportsOpen = (req) => req.session.reports_until && new Date(req.session.reports_until) > new Date();
+const requireReports = (req, res, next) => (reportsOpen(req) ? next() : res.status(403).json({ error: 'Introduce usuario y contraseña para ver los informes', code: 'reports_locked' }));
+app.get('/api/informes/estado', ...staff, (req, res) => res.json({ unlocked: Boolean(reportsOpen(req)), until: reportsOpen(req) ? req.session.reports_until : null }));
+app.post('/api/informes/acceso', ...staff, wrap(async (req, res) => {
+  if (tooMany(`informes:${req.user.id}`, 6, 15 * 60e3)) throw fail(429, 'Demasiados intentos. Espera unos minutos.');
+  const email = String(req.body.email || '').trim().toLowerCase();
+  if (email !== req.user.email.toLowerCase() || !verifyPassword(String(req.body.password || ''), req.user.password_hash)) throw fail(401, 'Usuario o contraseña incorrectos');
+  const r = await q(`update sessions set reports_until = now() + interval '${REPORTS_MINUTES} minutes' where id = $1 returning reports_until`, [req.session.id]);
+  res.json({ unlocked: true, until: r.rows[0].reports_until });
+}));
+app.post('/api/informes/bloquear', ...staff, wrap(async (req, res) => { await q('update sessions set reports_until = null where id = $1', [req.session.id]); res.json({ unlocked: false }); }));
+app.get('/api/informes', ...staff, requireReports, wrap(async (req, res) => {
+  const args = [], where = ['not e.archived'];
+  if (req.query.client) { if (!isUuid(req.query.client)) throw fail(400, 'Cliente no válido'); args.push(req.query.client); where.push(`e.client_id = $${args.length}`); }
+  res.json({ events: (await q(`${LIST_SQL} where ${where.join(' and ')} order by e.starts_on nulls last, e.seq`, args)).rows });
+}));
+
 app.get('/api/events', ...staff, wrap(async (req, res) => {
   const where = [], args = [];
   const add = (sql, v) => { args.push(v); where.push(sql.replaceAll('?', `$${args.length}`)); };

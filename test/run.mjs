@@ -1,6 +1,7 @@
 // Pruebas de Avania Events contra una base de datos en memoria (PGlite): acceso, permisos, acciones, tareas, panel y administración.
 process.env.EVENTS_PGLITE = '1';
 process.env.EVENTS_NO_LISTEN = '1';
+for (const k of ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS']) process.env[k] = '';   // las pruebas nunca envían correos de verdad
 process.env.DATABASE_URL = '';   // vacío (no borrado): dotenv no lo rellena desde .env y las pruebas nunca tocan la base real
 const { migrate } = await import('../src/migrate.js');
 const { q, closeDb } = await import('../src/db.js');
@@ -143,6 +144,19 @@ ok('contraseña corta → 400', (await new Client().call('POST', '/api/invitacio
 ok('elige contraseña', (await new Client().call('POST', '/api/invitacion/tok123', { password: 'mi-clave-nueva-123' })).j.ok === true);
 ok('el enlace sirve una sola vez', (await new Client().call('GET', '/api/invitacion/tok123')).s === 404);
 ok('ya entra con su clave', (await login('luis@avania.es', 'mi-clave-nueva-123')).r.s === 200);
+
+console.log('Informes con usuario y contraseña');
+{
+  const c = (await login('ana@avania.es')).c;
+  ok('informes cerrados al entrar', (await c.call('GET', '/api/informes')).s === 403 && (await c.call('GET', '/api/informes/estado')).j.unlocked === false);
+  ok('contraseña mala → 401', (await c.call('POST', '/api/informes/acceso', { email: 'ana@avania.es', password: 'mala' })).s === 401);
+  ok('usuario de otra persona → 401', (await c.call('POST', '/api/informes/acceso', { email: 'admin@avania.es', password: 'una-clave-larga-123' })).s === 401);
+  ok('con usuario y contraseña se abren', (await c.call('POST', '/api/informes/acceso', { email: 'ANA@avania.es', password: 'una-clave-larga-123' })).j.unlocked === true);
+  ok('ya devuelve las acciones con importes', Array.isArray((await c.call('GET', '/api/informes')).j.events));
+  ok('otra sesión sigue cerrada', (await (await login('ana@avania.es')).c.call('GET', '/api/informes')).s === 403);
+  await c.call('POST', '/api/informes/bloquear');
+  ok('se pueden volver a bloquear', (await c.call('GET', '/api/informes')).s === 403);
+}
 
 console.log('Salud');
 ok('/api/health', (await new Client().call('GET', '/api/health')).j.ok === true);
