@@ -47,3 +47,8 @@ export async function uploadFile(parentId, name, data, mime = 'application/octet
   if (!r.ok) throw new Error(`Subida a Drive: ${r.status} ${(await r.text()).slice(0, 160)}`);
   return r.json();
 }
+
+/** Manda a la papelera una carpeta (recuperable desde Drive). */
+export const trashFile = (id) => call('PATCH', `/files/${id}`, { params: { fields: 'id' }, body: { trashed: true } });
+/** Subcarpetas que lleva cada acción. */
+export const ACTION_SUBFOLDERS = ['Creatividades', 'Documentación', 'Producción'];
