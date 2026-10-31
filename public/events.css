@@ -520,4 +520,32 @@ main.auth-card .err { min-height: 18px; }
 
 /* Fila de tarea: «Ampliar» dentro del clip y el cartel de producción pegado a la derecha */
 .task .tmeta .clipbtn { opacity: 1; padding: 2px 10px; } .task .tmeta .clipbtn .amp { font-weight: 600; } .task .tmeta .clipbtn b { font-weight: 800; }
-.task .tmeta .sentprod { margin-left: auto; }
+.task { grid-template-columns: 22px minmax(0, 1fr) auto; }
+.task .tt { max-width: 440px; }
+.task .tmeta { grid-column: 2 / -1; flex-wrap: wrap; }
+.task .sentprod { justify-self: end; }
+.task .tmeta input[type=date] { width: 132px; } .task .tmeta .costbox input[type=number], .task .tmeta input[type=number] { width: 92px; }
+.task .tmeta select, .task .tmeta input { max-width: 132px; }
+/* Fila de tarea en una sola línea en escritorio */
+@media (min-width: 861px) {
+  .task .tmeta { flex-wrap: nowrap; gap: 4px; }
+  .task .tmeta select { width: 100px; max-width: none; padding-left: 6px; padding-right: 16px; }
+  .task .tmeta .stsel { width: 112px; padding-right: 18px; }
+  .task .tmeta input[type=date] { width: 122px; max-width: none; padding-left: 5px; padding-right: 3px; }
+  .task .tmeta .costbox input[type=number], .task .tmeta input[type=number] { width: 78px; max-width: none; }
+  .task .tmeta .clipbtn { padding: 2px 8px; white-space: nowrap; flex: none; }
+}
+@media (min-width: 861px) {
+  .task .tmeta .stsel { width: 122px; padding-left: 8px; padding-right: 16px; }
+  .task .tmeta select:not(.stsel) { width: 92px; }
+  .task .tmeta input[type=date] { width: 128px; font-size: 12px; padding-left: 4px; padding-right: 2px; }
+  .task .tmeta .costbox input[type=number], .task .tmeta input[type=number] { width: 72px; }
+}
+@media (min-width: 861px) {
+  .task .tmeta { flex-wrap: wrap; gap: 3px 4px; }
+  .task .tmeta .stsel { width: 120px; }
+  .task .tmeta select:not(.stsel) { width: 98px; }
+  .task .tmeta input[type=date] { width: 136px; }
+  .task .tmeta .costbox input[type=number], .task .tmeta input[type=number] { width: 70px; }
+  .task .tmeta .clipbtn { padding: 2px 6px; }
+}
