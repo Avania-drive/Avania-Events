@@ -1,7 +1,7 @@
 // Pruebas de Avania Events contra una base de datos en memoria (PGlite): acceso, permisos, acciones, tareas, panel y administración.
 process.env.EVENTS_PGLITE = '1';
 process.env.EVENTS_NO_LISTEN = '1';
-for (const k of ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS']) process.env[k] = '';   // las pruebas nunca envían correos de verdad
+for (const k of ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'GOOGLE_SA_FILE', 'DRIVE_ROOT_FOLDER', 'NOTION_TOKEN']) process.env[k] = '';   // las pruebas nunca envían correos de verdad
 process.env.DATABASE_URL = '';   // vacío (no borrado): dotenv no lo rellena desde .env y las pruebas nunca tocan la base real
 const { migrate } = await import('../src/migrate.js');
 const { q, closeDb } = await import('../src/db.js');
@@ -110,7 +110,7 @@ console.log('Archivar y borrar');
 ok('archivar', (await ana.call('DELETE', `/api/events/${ev2.id}`)).j.ok === true);
 ok('lo archivado no sale en la lista', !(await ana.call('GET', '/api/events')).j.events.some((e) => e.id === ev2.id));
 ok('un miembro no borra de verdad', (await ana.call('DELETE', `/api/events/${ev2.id}?hard=1`)).s === 403);
-ok('un administrador sí', (await admin.call('DELETE', `/api/events/${ev2.id}?hard=1`)).j.deleted === true);
+{ const dr = await admin.call('DELETE', `/api/events/${ev2.id}?hard=1`); if (dr.j.deleted !== true) console.log('borrar →', dr.s, JSON.stringify(dr.j)); ok('un administrador sí', dr.j.deleted === true); }
 
 console.log('Administración');
 ok('un miembro no entra en Administración', (await ana.call('GET', '/api/admin/users')).s === 403);
@@ -215,6 +215,38 @@ console.log('Clonar acción');
   ok('mueve la fecha límite de las tareas', cd.tasks.some((t) => t.due_on === '2027-02-20'));
   ok('año no válido → 400', (await c.call('POST', `/api/events/${o.id}/clone`, { year: 1800 })).s === 400);
   await c.call('DELETE', `/api/events/${o.id}?hard=1`); await c.call('DELETE', `/api/events/${cl.event.id}?hard=1`);
+}
+
+console.log('Registro de actividad');
+{
+  const a = admin, m = ana;   // sesiones ya abiertas (el limitador de accesos frena demasiados inicios seguidos)
+  const cid = (await m.call('GET', '/api/meta')).j.clients?.[0]?.id; const evr = await m.call('POST', '/api/events', { name: 'Con registro', client_id: cid }); if (!evr.j.event) console.log('crear →', evr.s, JSON.stringify(evr.j)); const ev = evr.j.event;
+  await m.call('PATCH', `/api/events/${ev.id}`, { description: 'x', cost: 999 });
+  await new Promise((r) => setTimeout(r, 300));
+  const log = (await a.call('GET', '/api/admin/actividad?limit=300')).j;
+  ok('un administrador ve el registro', log.entries.length > 0 && Array.isArray(log.people));
+  ok('queda el inicio de sesión', log.entries.some((x) => x.action === 'Inicio de sesión' && x.actor));
+  ok('queda la creación y la modificación', log.entries.some((x) => /Creó la acción «Con registro»/.test(x.summary)) && log.entries.some((x) => /Modificó/.test(x.summary) && x.event_id === ev.id));
+  ok('no guarda importes ni contraseñas', !JSON.stringify(log).includes('999') && !JSON.stringify(log).includes('una-clave-larga'));
+  ok('un usuario normal no lo ve', (await m.call('GET', '/api/admin/actividad')).s === 403);
+  ok('filtra por tipo', (await a.call('GET', '/api/admin/actividad?category=accesos')).j.entries.every((x) => x.category === 'accesos'));
+  await m.call('DELETE', `/api/events/${ev.id}?hard=1`);
+}
+
+console.log('Proveedores y producción');
+{
+  const prs = (await admin.call('GET', '/api/admin/providers')).j.providers;
+  ok('viene Top Impresión de serie', prs.some((x) => x.name === 'Top Impresión' && x.email === 'topimpresion@gmail.com'));
+  ok('un miembro no gestiona proveedores', (await ana.call('GET', '/api/admin/providers')).s === 403 && (await ana.call('GET', '/api/providers')).s === 200);
+  const nw = (await admin.call('POST', '/api/admin/providers', { name: 'Prueba SL', email: 'no-es-correo' })).s;
+  ok('correo no válido → 400', nw === 400);
+  const ok1 = (await admin.call('POST', '/api/admin/providers', { name: 'Prueba SL', email: 'a@b.es', phone: '600' })).j.provider;
+  ok('crear y borrar proveedor', ok1?.id && (await admin.call('DELETE', `/api/admin/providers/${ok1.id}`)).j.ok === true);
+  const evp = (await ana.call('POST', '/api/events', { name: 'Para producción', client_id: (await ana.call('GET', '/api/meta')).j.clients[0].id })).j.event;
+  const pr = (await ana.call('GET', `/api/events/${evp.id}/produccion`)).j;
+  ok('sin Drive no hay piezas pero responde', pr.drive === false && Array.isArray(pr.items));
+  { const r5 = await ana.call('POST', `/api/events/${evp.id}/produccion`, { provider_id: prs[0].id, file_ids: ['x'] }); ok('enviar sin Drive/correo → 503', r5.s === 503, JSON.stringify([r5.s, r5.j])); }
+  await ana.call('DELETE', `/api/events/${evp.id}?hard=1`); await admin.call('DELETE', `/api/events/${evp.id}?hard=1`);
 }
 
 console.log('Salud');

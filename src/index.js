@@ -6,10 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { q } from './db.js';
 import { hashPassword, verifyPassword, randomToken, sha256 } from './crypto.js';
 import { COOKIE, parseCookies, createSession, clearCookie, loadSession, requireUser, requireReady, requireRole, publicUser, isAdmin, tooMany } from './auth.js';
-import { driveEnabled, ensureFolder, uploadFile, ACTION_SUBFOLDERS } from './drive.js';
+import { auditMiddleware } from './audit.js';
+import { driveEnabled, ensureFolder, uploadFile, listChildren, copyFile, shareWith, folderUrl, ACTION_SUBFOLDERS } from './drive.js';
+import { sendMail, mailEnabled } from './mailer.js';
 import { EVENT_STATUS, TASK_STATUS, PRIORITIES, cleanEvent, cleanTask, cleanLinks, isUuid, yearFor } from './domain.js';
 import { sendInvite } from './invite.js';
-import { mailEnabled } from './mailer.js';
+
 
 export const app = express();
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -31,6 +33,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(loadSession);
+app.use(auditMiddleware(ip));
 
 // Los importes solo se ven con la sesión desbloqueada (usuario y contraseña en Informes, 30 min): fuera de ahí se vacían en las respuestas y no se aceptan cambios de importes.
 const costsOpen = (req) => Boolean(req.session?.reports_until && new Date(req.session.reports_until) > new Date());
@@ -219,14 +222,28 @@ app.post('/api/pendientes/visto', ...staff, wrap(async (req, res) => {
   await q(`update team_users set prefs = coalesce(prefs, '{}'::jsonb) || jsonb_build_object('pending_seen', ${TODAY_ES}) where id = $1`, [req.user.id]);
   res.json({ ok: true });
 }));
+// Tareas que se repiten entre acciones. Las variantes del mismo nombre ("Velero y A3", "Veleros y A3", "A3 y veleros", "Bases legales"/"Bases Legales") se unen en una sola.
+const STOP = new Set(['y', 'de', 'la', 'el', 'los', 'las', 'para', 'con', 'en', 'del', 'un', 'una']);
+const taskKey = (t) => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w && !STOP.has(w)).map((w) => w.replace(/(es|s)$/, '')).sort().join(' ');
 app.get('/api/task-templates', ...staff, wrap(async (_req, res) => {
-  const r = await q(`select min(t.title) title, t.section_id, count(distinct t.event_id)::int count
-    from tasks t join events e on e.id = t.event_id
-    where not e.archived and t.status <> 'archivada' and length(trim(t.title)) > 2 and lower(trim(t.title)) <> 'tarea'
-    group by lower(trim(t.title)), t.section_id having count(distinct t.event_id) >= 2
-    order by count desc, min(t.title) limit 40`);
-  res.json({ templates: r.rows });
+  const rows = (await q(`select t.title, t.section_id, t.event_id from tasks t join events e on e.id = t.event_id
+    where not e.archived and t.status <> 'archivada' and length(trim(t.title)) > 2 and lower(trim(t.title)) <> 'tarea'`)).rows;
+  const groups = new Map();
+  for (const r of rows) {
+    const k = taskKey(r.title); if (k.length < 3) continue;
+    const g = groups.get(k) || { events: new Set(), titles: new Map(), sections: new Map() };
+    g.events.add(r.event_id);
+    g.titles.set(r.title.trim(), (g.titles.get(r.title.trim()) || 0) + 1);
+    g.sections.set(r.section_id || '', (g.sections.get(r.section_id || '') || 0) + 1);
+    groups.set(k, g);
+  }
+  const top = (m) => [...m.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))[0][0];
+  const templates = [...groups.values()].filter((g) => g.events.size >= 2)
+    .map((g) => { const title = top(g.titles), sec = top(g.sections); return { title: title === title.toUpperCase() ? title[0] + title.slice(1).toLowerCase() : title, section_id: sec || null, count: g.events.size }; })
+    .sort((a, b) => b.count - a.count || a.title.localeCompare(b.title)).slice(0, 40);
+  res.json({ templates });
 }));
+
 
 app.post('/api/events', ...staff, wrap(async (req, res) => {
   const clientId = req.body.client_id;
@@ -381,6 +398,79 @@ app.post('/api/events/:id/clone', ...staff, wrap(async (req, res) => {
   res.json({ event: row, tasks: tasks.length });
 }));
 
+// ───────── Proveedores y envío a producción ─────────
+const cleanProvider = (b, cur = {}) => {
+  const name = b.name !== undefined ? String(b.name).trim().slice(0, 100) : cur.name;
+  if (!name) throw fail(400, 'Pon el nombre del proveedor');
+  const email = b.email !== undefined ? String(b.email).trim().slice(0, 160) : cur.email ?? '';
+  if (email && !/^\S+@\S+\.\S+$/.test(email)) throw fail(400, 'El correo del proveedor no es válido');
+  return { name, email, phone: b.phone !== undefined ? String(b.phone).trim().slice(0, 40) : cur.phone ?? '', notes: b.notes !== undefined ? String(b.notes).trim().slice(0, 1000) : cur.notes ?? '' };
+};
+app.get('/api/providers', ...staff, wrap(async (_req, res) => res.json({ providers: (await q('select id, name, email, phone from providers order by position, name')).rows })));
+app.get('/api/admin/providers', ...admins, wrap(async (_req, res) => res.json({ providers: (await q('select * from providers order by position, name')).rows })));
+app.post('/api/admin/providers', ...admins, wrap(async (req, res) => {
+  const d = cleanProvider(req.body);
+  try { res.json({ provider: (await q('insert into providers (name, email, phone, notes, position) values ($1,$2,$3,$4,(select coalesce(max(position), 0) + 1 from providers)) returning *', [d.name, d.email, d.phone, d.notes])).rows[0] }); }
+  catch (e) { throw /unique|duplicate/i.test(e.message) ? fail(409, 'Ya hay un proveedor con ese nombre') : e; }
+}));
+app.patch('/api/admin/providers/:id', ...admins, wrap(async (req, res) => {
+  if (!isUuid(req.params.id)) throw fail(404, 'No existe ese proveedor');
+  const cur = (await q('select * from providers where id = $1', [req.params.id])).rows[0];
+  if (!cur) throw fail(404, 'No existe ese proveedor');
+  const d = cleanProvider(req.body, cur);
+  try { res.json({ provider: (await q('update providers set name = $1, email = $2, phone = $3, notes = $4 where id = $5 returning *', [d.name, d.email, d.phone, d.notes, cur.id])).rows[0] }); }
+  catch (e) { throw /unique|duplicate/i.test(e.message) ? fail(409, 'Ya hay un proveedor con ese nombre') : e; }
+}));
+app.delete('/api/admin/providers/:id', ...admins, wrap(async (req, res) => {
+  if (!isUuid(req.params.id)) throw fail(404, 'No existe ese proveedor');
+  await q('delete from providers where id = $1', [req.params.id]); res.json({ ok: true });
+}));
+
+const isFile = (f) => f.mimeType !== 'application/vnd.google-apps.folder';
+app.get('/api/events/:id/produccion', ...staff, wrap(async (req, res) => {
+  const e = await loadEvent(req.params.id);
+  const sends = (await q('select id, provider_name, sent_to, sender_name, files, message, folder_url, shared, created_at from production_sends where event_id = $1 order by created_at desc', [e.id])).rows;
+  if (!driveEnabled() || !e.drive_folder_id) return res.json({ drive: false, items: [], sends, mail: mailEnabled() });
+  const root = e.drive_folder_id, creat = await ensureFolder(root, 'Creatividades'), prod = await ensureFolder(root, 'Producción');
+  const files = (await listChildren(creat)).filter(isFile), already = new Set((await listChildren(prod)).filter(isFile).map((f) => f.name));
+  const links = (await q('select f.drive_file_id, t.title from task_files f join tasks t on t.id = f.task_id where f.event_id = $1', [e.id])).rows;
+  const taskOf = new Map(links.map((l) => [l.drive_file_id, l.title]));
+  res.json({ drive: true, mail: mailEnabled(), folder_url: folderUrl(prod), creativities_url: folderUrl(creat),
+    items: files.map((f) => ({ id: f.id, name: f.name, size: Number(f.size) || null, url: f.webViewLink, task: taskOf.get(f.id) || null, in_production: already.has(f.name) })), sends });
+}));
+app.post('/api/events/:id/produccion', ...staff, wrap(async (req, res) => {
+  const e = await loadEvent(req.params.id);
+  if (!driveEnabled() || !e.drive_folder_id) throw fail(503, 'Esta acción no tiene carpeta de Drive');
+  if (!mailEnabled()) throw fail(503, 'El correo no está configurado en el servidor');
+  if (!isUuid(req.body.provider_id)) throw fail(400, 'Elige el proveedor');
+  const prov = (await q('select * from providers where id = $1', [req.body.provider_id])).rows[0];
+  if (!prov) throw fail(404, 'No existe ese proveedor');
+  if (!prov.email) throw fail(400, `${prov.name} no tiene correo: añádelo en Administración, Proveedores`);
+  const ids = [...new Set((Array.isArray(req.body.file_ids) ? req.body.file_ids : []).map(String))].slice(0, 100);
+  if (!ids.length) throw fail(400, 'Marca al menos una pieza para enviar');
+  const creat = await ensureFolder(e.drive_folder_id, 'Creatividades'), prod = await ensureFolder(e.drive_folder_id, 'Producción');
+  const avail = new Map((await listChildren(creat)).filter(isFile).map((f) => [f.id, f]));
+  const have = new Set((await listChildren(prod)).filter(isFile).map((f) => f.name));
+  const chosen = ids.map((i) => avail.get(i)).filter(Boolean);
+  if (!chosen.length) throw fail(400, 'Esas piezas ya no están en la carpeta de Creatividades');
+  for (const f of chosen) if (!have.has(f.name)) await copyFile(f.id, prod, f.name);   // el original se queda en Creatividades
+  let shared = true;
+  try { await shareWith(prod, prov.email); } catch (err) { shared = false; console.error('[produccion] compartir carpeta:', err.message); }
+  const url = folderUrl(prod), who = req.user.name || req.user.email;
+  const message = String(req.body.message || '').trim().slice(0, 2000);
+  const replyTo = process.env.PRODUCCION_REPLY_TO || 'elvira.vila@avania.es';
+  const fromAddr = (process.env.MAIL_FROM || '').match(/<([^>]+)>/)?.[1] || process.env.SMTP_USER;
+  await sendMail({
+    to: prov.email, cc: replyTo, replyTo, from: `"Elvira Vila · AVANIA" <${fromAddr}>`,
+    subject: `Producción · ${e.ref} ${e.name}`, title: `Piezas para producción: ${e.name}`,
+    paragraphs: [message || `Hola. Te enviamos las piezas aprobadas de «${e.name}» para producción.`, `Piezas (${chosen.length}): ${chosen.map((f) => f.name).join(', ')}.`, shared ? 'Te hemos dado acceso a la carpeta; si no puedes abrirla, respóndenos a este correo.' : 'Si no puedes abrir la carpeta, respóndenos a este correo y te damos acceso.'],
+    button: { label: 'Abrir las piezas en Drive', url },
+  });
+  await q('insert into production_sends (event_id, provider_id, provider_name, sent_to, sent_by, sender_name, files, message, folder_url, shared) values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)',
+    [e.id, prov.id, prov.name, prov.email, req.user.id, who, JSON.stringify(chosen.map((f) => f.name)), message, url, shared]);
+  res.json({ ok: true, provider: prov.name, files: chosen.length, shared, folder_url: url });
+}));
+
 app.post('/api/events/:id/tasks', ...staff, wrap(async (req, res) => {
   const e = await loadEvent(req.params.id);
   const d = cleanTask(req.body);
@@ -442,6 +532,21 @@ app.get('/api/dashboard', ...staff, wrap(async (req, res) => {
 // ───────── Administración (solo administradores): personal del equipo, clientes, tipos y secciones ─────────
 const tempPassword = () => randomToken(9);
 const userOut = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, active: u.active, pending: Boolean(u.invite_hash) || u.must_change_password, created_at: u.created_at });
+
+// Registro de actividad (solo administración): quién hizo qué y cuándo
+app.get('/api/admin/actividad', ...admins, wrap(async (req, res) => {
+  const where = [], args = [];
+  const add = (sql, v) => { args.push(v); where.push(sql.replaceAll('?', `$${args.length}`)); };
+  if (req.query.user && isUuid(req.query.user)) add('a.user_id = ?', req.query.user);
+  if (req.query.category) add('a.category = ?', String(req.query.category).slice(0, 30));
+  if (req.query.from) add('a.at >= ?::date', String(req.query.from).slice(0, 10));
+  if (req.query.to) add("a.at < (?::date + 1)", String(req.query.to).slice(0, 10));
+  if (req.query.q) add('(a.summary ilike ? or a.actor ilike ?)', `%${String(req.query.q).slice(0, 60)}%`);
+  const limit = Math.min(Number(req.query.limit) || 100, 300), offset = Math.max(Number(req.query.offset) || 0, 0);
+  const rows = await q(`select a.id, a.at, a.user_id, a.actor, a.action, a.category, a.event_id, a.summary, a.ok, e.ref from audit_log a left join events e on e.id = a.event_id ${where.length ? `where ${where.join(' and ')}` : ''} order by a.at desc, a.id desc limit ${limit + 1} offset ${offset}`, args);
+  const last = await q(`select u.id, u.name, u.email, (select max(at) from audit_log where user_id = u.id and action = 'Inicio de sesión') last_login, (select max(at) from audit_log where user_id = u.id) last_action from team_users u where u.active order by coalesce(nullif(u.name, ''), u.email)`);
+  res.json({ entries: rows.rows.slice(0, limit), more: rows.rows.length > limit, people: last.rows });
+}));
 
 app.get('/api/admin/users', ...admins, wrap(async (_req, res) => {
   res.json({ users: (await q('select * from team_users order by active desc, coalesce(nullif(name, \'\'), email)')).rows.map(userOut), mail: mailEnabled() });
@@ -583,7 +688,7 @@ app.get('/invitacion', (_req, res) => res.sendFile(path.join(PUBLIC, 'invitacion
 app.use(express.static(PUBLIC, { index: 'index.html', extensions: ['html'], setHeaders: (res, p) => { if (/\.(js|css|html)$/.test(p)) res.setHeader('Cache-Control', 'no-cache'); } }));
 app.use('/api', (_req, res) => res.status(404).json({ error: 'No existe' }));
 app.use((err, _req, res, _next) => {
-  if (err.status && err.status < 500) return res.status(err.status).json({ error: err.message });
+  if (err.status && (err.status < 500 || err.status === 503)) return res.status(err.status).json({ error: err.message });
   console.error(err);
   res.status(500).json({ error: 'Error del servidor' });
 });

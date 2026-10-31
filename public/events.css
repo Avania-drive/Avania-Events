@@ -376,3 +376,26 @@ input.title:hover { border-color: var(--line); }
 .pend-tabs { display: inline-flex; gap: 2px; border: 1px solid var(--line); border-radius: 10px; padding: 3px; background: var(--panel); margin-bottom: 12px; }
 .pend-tabs button { border: 0; background: none; padding: 5px 12px; border-radius: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
 .pend-tabs button.on { background: var(--soft); color: var(--accent); font-weight: 600; }
+
+/* Registro de actividad */
+.act-people { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.act-person { display: grid; gap: 1px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); font-size: 12.5px; min-width: 170px; }
+.act-person.idle { opacity: .6; }
+.act-person small { color: var(--muted); }
+.act-filters { margin-bottom: 10px; }
+.act-list { padding: 4px 14px; }
+.act-row { display: grid; grid-template-columns: 110px 130px 110px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.act-row:first-child { border-top: 0; }
+.act-row .when { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.act-row .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-row .cat { font-style: normal; font-size: 11.5px; font-weight: 600; padding: 1px 9px; border-radius: 999px; background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c); justify-self: start; }
+.act-row.bad { background: #fef2f2; }
+@media (max-width: 860px) { .act-row { grid-template-columns: 1fr; gap: 2px; } }
+
+/* Enviar a producción */
+.prodlist { display: grid; gap: 10px; max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: var(--panel); }
+.prodgrp h4 { margin: 0 0 4px; font-size: 12.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.proditem { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.proditem:hover { background: var(--soft); }
+.proditem a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.prodhist ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }

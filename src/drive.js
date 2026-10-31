@@ -59,3 +59,9 @@ export async function moveTo(id, newParentId) {
   if (cur.length === 1 && cur[0] === newParentId) return;
   await call('PATCH', `/files/${id}`, { params: { addParents: newParentId, removeParents: cur.join(','), fields: 'id' } });
 }
+
+/** Copia un archivo a otra carpeta (el original se queda donde está). */
+export const copyFile = (id, parentId, name) => call('POST', `/files/${id}/copy`, { params: { fields: 'id,name' }, body: { parents: [parentId], ...(name ? { name } : {}) } });
+/** Da acceso de lectura a una persona concreta (sin aviso de Google; el aviso lo mandamos nosotros). */
+export const shareWith = (id, email, role = 'reader') => call('POST', `/files/${id}/permissions`, { params: { sendNotificationEmail: 'false', fields: 'id' }, body: { type: 'user', role, emailAddress: email } });
+export const folderUrl = (id) => `https://drive.google.com/drive/folders/${id}`;

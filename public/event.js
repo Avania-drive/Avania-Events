@@ -38,6 +38,37 @@ export function newEventModal(d = {}) {
 // Público objetivo: se elige entre opciones (se pueden marcar varias) y hay un campo «Otro» para lo que no esté en la lista. Se guarda como texto separado por comas.
 const AUDIENCES = ['Familias', 'Niños y niñas', 'Jóvenes', 'Adultos', 'Mujeres', 'Hombres', 'Mayores', 'Público general', 'Clientes del centro', 'Comercios y locales', 'Prensa y medios'];
 
+// Enviar a producción: se marcan las piezas aprobadas de Creatividades, se elige proveedor y se le manda por correo el enlace a la carpeta Producción
+async function productionModal(e) {
+  let d, provs;
+  try { [d, provs] = await Promise.all([api('GET', `/api/events/${e.id}/produccion`), api('GET', '/api/providers')]); } catch (er) { return toast(er.message, true); }
+  if (!d.drive) return toast('Esta acción no tiene carpeta de Drive todavía', true);
+  const sizeOf = (n) => (n == null ? '' : n > 1e6 ? `${(n / 1e6).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
+  const prov = select([['', 'Elige proveedor…'], ...provs.providers.map((p) => [p.id, `${p.name}${p.email ? '' : ' (sin correo)'}`])], provs.providers.length === 1 ? provs.providers[0].id : '', { 'aria-label': 'Proveedor' });
+  const message = el('textarea', { rows: 4, maxlength: 2000 }, `Hola. Te enviamos las piezas aprobadas de «${e.name}» para producción. Cualquier duda, respóndeme a este correo.\n\nGracias.`);
+  const err = el('div', { class: 'err', role: 'alert' });
+  const groups = new Map();
+  for (const it of d.items) { const k = it.task || 'Otros archivos'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); }
+  const checks = [];
+  const list = d.items.length ? el('div', { class: 'prodlist' }, [...groups.entries()].map(([task, items]) => el('div', { class: 'prodgrp' }, el('h4', {}, task),
+    items.map((it) => { const c = el('input', { type: 'checkbox', value: it.id }); checks.push(c); return el('label', { class: 'proditem' }, c, el('a', { href: it.url, target: '_blank', rel: 'noopener', onclick: (ev) => ev.stopPropagation() }, it.name), el('small', { class: 'muted' }, [sizeOf(it.size), it.in_production ? 'ya está en Producción' : ''].filter(Boolean).join(' · '))); }))))
+    : el('p', { class: 'muted' }, 'La carpeta de Creatividades está vacía. Sube primero las piezas aprobadas a esa carpeta.');
+  const hist = d.sends.length ? el('details', { class: 'prodhist' }, el('summary', {}, `Envíos anteriores (${d.sends.length})`), el('ul', {}, d.sends.map((s) => el('li', {}, `${new Date(s.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · ${s.provider_name} · ${s.files.length} pieza${s.files.length === 1 ? '' : 's'} · por ${s.sender_name}`)))) : null;
+  openModal({ title: 'Enviar a producción', wide: true,
+    body: el('div', { class: 'fields' },
+      el('p', { class: 'muted wide' }, 'Marca las piezas aprobadas. Se copian a la carpeta «Producción» de esta acción y el proveedor recibe un correo con el enlace. El correo sale a nombre de Elvira Vila, con copia a ella.'),
+      el('div', { class: 'field wide' }, el('div', { class: 'clone-h' }, el('label', {}, 'Piezas de Creatividades'), el('button', { class: 'btn ghost small', type: 'button', onclick: () => checks.forEach((c) => { c.checked = true; }) }, 'Marcar todas'), el('button', { class: 'btn ghost small', type: 'button', onclick: () => checks.forEach((c) => { c.checked = false; }) }, 'Quitar todas')), list),
+      field('Proveedor', prov), el('div', { class: 'field wide' }, el('label', {}, 'Mensaje'), message), hist ? el('div', { class: 'field wide' }, hist) : null, el('div', { class: 'field wide' }, err)),
+    actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Enviar a producción', keep: true, run: async (_e, close) => {
+      err.textContent = '';
+      const file_ids = checks.filter((c) => c.checked).map((c) => c.value);
+      if (!file_ids.length) { err.textContent = 'Marca al menos una pieza'; return false; }
+      if (!prov.value) { err.textContent = 'Elige el proveedor'; return false; }
+      try { const r = await api('POST', `/api/events/${e.id}/produccion`, { provider_id: prov.value, file_ids, message: message.value }); close(); toast(`Enviado a ${r.provider}: ${r.files} pieza${r.files === 1 ? '' : 's'}${r.shared ? '' : ' (no se pudo dar acceso a la carpeta: avísale)'}`); }
+      catch (er) { err.textContent = er.message; return false; }
+    } }] });
+}
+
 // Clonar una acción a otro año (copia la ficha y las tareas, todas sin hacer y sin importes)
 function cloneModal(e) {
   const thisYear = new Date().getFullYear();
@@ -278,6 +309,7 @@ export async function eventView(id, openTaskId = null) {
     el('div', { class: 'evt-h' }, el('div', { class: 'line' }, el('span', { class: 'ref' }, e.ref), el('span', { class: 'cli', style: { '--c': client?.color } }, client?.name || ''), statusSel, prioSel, saved,
       el('span', { style: { marginLeft: 'auto', display: 'flex', gap: '8px' } },
         el('button', { class: 'btn ghost small', type: 'button', onclick: () => cloneModal(e) }, icon('copy'), 'Clonar'),
+        e.drive_url ? el('button', { class: 'btn small', type: 'button', onclick: () => productionModal(e) }, 'Enviar a producción') : null,
         el('button', { class: 'btn ghost small', type: 'button', onclick: async () => { if (!(await confirmBox('Archivar acción', `¿Archivar «${e.name}»? Dejará de salir en las listas (un administrador puede borrarla del todo).`, 'Archivar'))) return; await api('DELETE', `/api/events/${id}`); await loadEvents(); toast('Acción archivada'); location.hash = `#/anio/${e.year}`; } }, 'Archivar'),
         state.me.is_admin ? el('button', { class: 'btn danger small', type: 'button', onclick: async () => { if (!(await confirmBox('Borrar para siempre', `¿Borrar «${e.name}» con todas sus tareas? No se puede deshacer.`, 'Borrar para siempre', true))) return; await api('DELETE', `/api/events/${id}?hard=1`); await loadEvents(); toast('Acción borrada'); location.hash = `#/anio/${e.year}`; } }, 'Borrar') : null)),
       title),
