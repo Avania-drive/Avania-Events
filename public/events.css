@@ -265,3 +265,10 @@ input.title:hover { border-color: var(--line); }
 .sortbtn { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-transform: inherit; letter-spacing: inherit; font-weight: inherit; }
 .sortbtn .arr { font-size: 10px; color: var(--accent); }
 .sortbtn:hover .arr { opacity: .7; }
+
+/* Público objetivo: opciones marcables */
+.aud { display: grid; gap: 8px; }
+.aud-opts { gap: 6px; }
+.aud-opts .opt { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
+.aud-opts .opt:hover { border-color: var(--accent); }
+.aud-opts .opt.on { background: var(--soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }

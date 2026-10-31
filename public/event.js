@@ -25,6 +25,9 @@ export function newEventModal(d = {}) {
     } }] });
 }
 
+// Público objetivo: se elige entre opciones (se pueden marcar varias) y hay un campo «Otro» para lo que no esté en la lista. Se guarda como texto separado por comas.
+const AUDIENCES = ['Familias', 'Niños y niñas', 'Jóvenes', 'Adultos', 'Mujeres', 'Hombres', 'Mayores', 'Público general', 'Clientes del centro', 'Comercios y locales', 'Prensa y medios'];
+
 const LOG_LABEL = { status: 'el estado', owner_id: 'el responsable', starts_on: 'la fecha de inicio', ends_on: 'la fecha de fin', cost: 'el coste', invoiced: 'la facturación', name: 'el nombre', archived: 'el archivado' };
 function logText(l) {
   const d = l.detail || {};
@@ -150,6 +153,17 @@ export async function eventView(id) {
   };
   drawLinks();
 
+  // Público objetivo (selección múltiple)
+  const audBox = el('div', { class: 'aud' });
+  const audParts = () => String(e.audience || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const setAud = (list, other) => set('audience', [...list, ...(other ? [other] : [])].join(', '));
+  const drawAud = () => {
+    const cur = audParts(), picked = cur.filter((x) => AUDIENCES.includes(x)), other = cur.filter((x) => !AUDIENCES.includes(x)).join(', ');
+    const otherIn = el('input', { type: 'text', value: other, maxlength: 120, placeholder: 'Otro (escribe aquí)', 'aria-label': 'Otro público objetivo', oninput: (ev) => setAud(audParts().filter((x) => AUDIENCES.includes(x)), ev.target.value.replace(/,/g, ' ').trim()) });
+    audBox.replaceChildren(el('div', { class: 'chips aud-opts', role: 'group', 'aria-label': 'Público objetivo' }, AUDIENCES.map((a) => el('button', { type: 'button', class: `opt${picked.includes(a) ? ' on' : ''}`, 'aria-pressed': String(picked.includes(a)), onclick: () => { const now = audParts(); const o = now.filter((x) => !AUDIENCES.includes(x)).join(', '); setAud(picked.includes(a) ? AUDIENCES.filter((x) => x !== a && picked.includes(x)) : AUDIENCES.filter((x) => x === a || picked.includes(x)), o); drawAud(); } }, a))), otherIn);
+  };
+  drawAud();
+
   // ── Valoración ──
   const stars = el('div', { class: 'stars', role: 'group', 'aria-label': 'Valoración de 1 a 5' });
   const drawStars = () => stars.replaceChildren(...[1, 2, 3, 4, 5].map((n) => el('button', { type: 'button', class: n <= (e.rating || 0) ? 'on' : '', 'aria-label': `${n} de 5`, 'aria-pressed': String(n === e.rating), onclick: () => { set('rating', e.rating === n ? null : n); drawStars(); } }, icon('star'))));
@@ -194,7 +208,7 @@ export async function eventView(id) {
         el('section', { class: 'card sec' }, el('h3', {}, 'Descripción'), area('description', 'Qué es esta acción', 'wide', 5)),
         el('section', { class: 'card sec' }, el('h3', {}, 'Tareas', el('small', { class: 'muted' }, 'lo que hay que hacer para que salga adelante')), progress, tasksBox,
           el('div', { class: 'addtask' }, newTitle, newSection, el('button', { class: 'btn', type: 'button', onclick: () => addTask() }, icon('plus'), 'Añadir'))),
-        el('section', { class: 'card sec' }, el('h3', {}, 'Briefing'), el('div', { class: 'fields' }, area('objective', 'Objetivo', 'wide', 3), area('audience', 'Público objetivo', 'wide', 3))),
+        el('section', { class: 'card sec' }, el('h3', {}, 'Briefing'), el('div', { class: 'fields' }, area('objective', 'Objetivo', 'wide', 3), el('div', { class: 'field wide' }, el('label', {}, 'Público objetivo'), audBox))),
         el('section', { class: 'card sec' }, el('h3', {}, 'Cierre del evento', el('small', { class: 'muted' }, 'para rellenar cuando termine')), el('div', { class: 'fields' },
           field('Participantes / asistencia', el('input', { type: 'number', min: 0, value: e.participants ?? '', onchange: (ev) => set('participants', ev.target.value === '' ? null : Number(ev.target.value)) })),
           field('Valoración (1 a 5)', stars),
