@@ -203,7 +203,7 @@ export async function eventView(id, openTaskId = null) {
   // ── Tareas ──
   const tasksBox = el('div'), progress = el('div', { class: 'prog' });
   const sectionName = (sid) => state.meta.sections.find((s) => s.id === sid)?.name || 'Sin sección';
-  const closed = new Set();
+  const opened = new Set();
   const live = () => tasks.filter((t) => t.status !== 'archivada');
   const upTask = async (t, patch) => {
     try { const { task } = await api('PATCH', `/api/tasks/${t.id}`, patch); Object.assign(t, task); drawTasks(); refreshSummary(); refreshLog(); loadEvents(); } catch (er) { toast(er.message, true); drawTasks(); }
@@ -227,10 +227,10 @@ export async function eventView(id, openTaskId = null) {
     const order = [...state.meta.sections.map((s) => s.id), null];
     const groups = order.map((sid) => ({ sid, list: roots.filter((t) => (t.section_id || null) === sid) })).filter((g) => g.list.length);
     tasksBox.replaceChildren(...[...groups.map((g) => {
-      const key = g.sid || 'none'; const open = !closed.has(key);
+      const key = g.sid || 'none'; const open = opened.has(key);
       const done = g.list.filter((t) => t.status === 'finalizada').length;
       return el('div', { class: `tsec${open ? ' open' : ''}`, style: { '--sc': sectionOf(g.sid)?.color || '#98a2b3' } },
-        el('button', { class: 'th', type: 'button', 'aria-expanded': String(open), onclick: () => { if (open) closed.add(key); else closed.delete(key); drawTasks(); } }, icon('chev', 'chev'), el('i', { class: 'sdot' }), sectionName(g.sid), el('small', { class: 'muted', style: { textTransform: 'none', fontWeight: 400 } }, `${done}/${g.list.length}`)),
+        el('button', { class: 'th', type: 'button', 'aria-expanded': String(open), onclick: () => { if (open) opened.delete(key); else opened.add(key); drawTasks(); } }, icon('chev', 'chev'), el('i', { class: 'sdot' }), sectionName(g.sid), el('small', { class: 'muted', style: { textTransform: 'none', fontWeight: 400 } }, `${done}/${g.list.length}`)),
         open ? g.list.flatMap((t) => [taskRow(t), ...live().filter((c) => c.parent_id === t.id).map((c) => taskRow(c, true))]) : null);
     }), groups.length ? null : el('p', { class: 'muted' }, 'Todavía no hay tareas. Añade la primera abajo.')].filter(Boolean));
     const total = live().length, done = live().filter((t) => t.status === 'finalizada').length;
@@ -240,7 +240,7 @@ export async function eventView(id, openTaskId = null) {
   const newSection = select([['', 'Sin sección'], ...state.meta.sections.map((s) => [s.id, s.name])], '', { 'aria-label': 'Sección de la nueva tarea' });
   const addTask = async (extra = {}) => {
     const t = (extra.title ?? newTitle.value).trim(); if (!t) return;
-    try { const { task } = await api('POST', `/api/events/${id}/tasks`, { title: t, section_id: newSection.value || null, ...extra }); tasks.push(task); if (extra.title === undefined) { newTitle.value = ''; closed.delete(task.section_id || 'none'); } drawTasks(); refreshSummary(); loadEvents(); newTitle.focus(); }
+    try { const { task } = await api('POST', `/api/events/${id}/tasks`, { title: t, section_id: newSection.value || null, ...extra }); tasks.push(task); if (extra.title === undefined) { newTitle.value = ''; opened.add(task.section_id || 'none'); } drawTasks(); refreshSummary(); loadEvents(); newTitle.focus(); }
     catch (er) { toast(er.message, true); }
   };
   newTitle.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addTask(); } });
