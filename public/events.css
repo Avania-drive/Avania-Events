@@ -157,7 +157,6 @@ input.title:hover { border-color: var(--line); }
 .tsec.open > .th .chev { transform: rotate(90deg); }
 .task { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 4px; border-top: 1px solid var(--line); }
 .task.sub { margin-left: 28px; }
-.task.done .tt { text-decoration: line-through; color: var(--muted); }
 .task .tt { border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 6px; width: 100%; font-size: 14px; }
 .task .tt:hover { border-color: var(--line); }
 .task .tmeta { grid-column: 2; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-start; }
