@@ -52,3 +52,10 @@ export async function uploadFile(parentId, name, data, mime = 'application/octet
 export const trashFile = (id) => call('PATCH', `/files/${id}`, { params: { fields: 'id' }, body: { trashed: true } });
 /** Subcarpetas que lleva cada acción. */
 export const ACTION_SUBFOLDERS = ['Creatividades', 'Documentación', 'Producción'];
+
+/** Mueve una carpeta a otra (cambia su carpeta padre). */
+export async function moveTo(id, newParentId) {
+  const cur = (await call('GET', `/files/${id}`, { params: { fields: 'parents' } })).parents || [];
+  if (cur.length === 1 && cur[0] === newParentId) return;
+  await call('PATCH', `/files/${id}`, { params: { addParents: newParentId, removeParents: cur.join(','), fields: 'id' } });
+}

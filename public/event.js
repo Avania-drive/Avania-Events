@@ -13,14 +13,23 @@ export function newEventModal(d = {}) {
   const from = el('input', { type: 'date' }), to = el('input', { type: 'date' });
   const year = el('input', { type: 'number', min: 2000, max: 2100, value: d.year || new Date().getFullYear() });
   const err = el('div', { class: 'err', role: 'alert' });
+  const cloneBox = el('div', { class: 'clonebox' }, el('p', { class: 'muted' }, 'Cargando las tareas más habituales…'));
+  let templates = [];
+  api('GET', '/api/task-templates').then((r) => { templates = r.templates; drawClone(); }).catch(() => cloneBox.replaceChildren(el('p', { class: 'muted' }, 'No se pudieron cargar las tareas tipo.')));
+  function drawClone() {
+    if (!templates.length) return cloneBox.replaceChildren(el('p', { class: 'muted' }, 'Todavía no hay tareas que se repitan entre acciones.'));
+    const all = (on) => cloneBox.querySelectorAll('input[type=checkbox]').forEach((c) => { c.checked = on; });
+    cloneBox.replaceChildren(el('div', { class: 'clone-h' }, el('button', { class: 'btn ghost small', type: 'button', onclick: () => all(true) }, 'Marcar todas'), el('button', { class: 'btn ghost small', type: 'button', onclick: () => all(false) }, 'Quitar todas')),
+      el('div', { class: 'clone-list' }, templates.map((t, i) => el('label', { class: 'clone-item' }, el('input', { type: 'checkbox', 'data-i': i }), el('span', {}, t.title), el('small', { class: 'muted' }, `${sectionOf(t.section_id)?.name || 'Sin sección'} · en ${t.count} acciones`)))));
+  }
   from.addEventListener('change', () => { if (from.value) year.value = from.value.slice(0, 4); if (to.value && to.value < from.value) to.value = from.value; });
   openModal({ title: 'Nueva acción', wide: true,
     body: el('div', { class: 'fields' }, field('Nombre', name), field('Cliente', client), field('Tipo de acción', type), field('Responsable', owner),
-      field('Fecha de inicio', from), field('Fecha de fin', to), field('Año', year, 'Sale de la fecha de inicio; si no hay fecha todavía, el que pongas.'), el('div', { class: 'field wide' }, err)),
+      field('Fecha de inicio', from), field('Fecha de fin', to), field('Año', year, 'Sale de la fecha de inicio; si no hay fecha todavía, el que pongas.'), el('div', { class: 'field wide' }, el('label', {}, 'Tareas que quieres que vengan ya creadas'), cloneBox), el('div', { class: 'field wide' }, err)),
     actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Crear acción', keep: true, run: async (_e, close) => {
       err.textContent = '';
       try {
-        const r = await api('POST', '/api/events', { name: name.value, client_id: client.value, type_id: type.value || null, owner_id: owner.value || null, starts_on: from.value || null, ends_on: to.value || null, year: Number(year.value) });
+        const r = await api('POST', '/api/events', { name: name.value, client_id: client.value, type_id: type.value || null, owner_id: owner.value || null, starts_on: from.value || null, ends_on: to.value || null, year: Number(year.value), clone_tasks: [...cloneBox.querySelectorAll('input[type=checkbox]:checked')].map((c) => ({ title: templates[Number(c.dataset.i)].title, section_id: templates[Number(c.dataset.i)].section_id })) });
         await loadEvents(); close(); toast(`Creada ${r.event.ref}`); location.hash = `#/evento/${r.event.id}`;
       } catch (e) { err.textContent = e.message; return false; }
     } }] });
@@ -28,6 +37,21 @@ export function newEventModal(d = {}) {
 
 // Público objetivo: se elige entre opciones (se pueden marcar varias) y hay un campo «Otro» para lo que no esté en la lista. Se guarda como texto separado por comas.
 const AUDIENCES = ['Familias', 'Niños y niñas', 'Jóvenes', 'Adultos', 'Mujeres', 'Hombres', 'Mayores', 'Público general', 'Clientes del centro', 'Comercios y locales', 'Prensa y medios'];
+
+// Clonar una acción a otro año (copia la ficha y las tareas, todas sin hacer y sin importes)
+function cloneModal(e) {
+  const thisYear = new Date().getFullYear();
+  const years = [...new Set([e.year + 1, thisYear, thisYear + 1, thisYear + 2, thisYear + 3])].filter((y) => y !== e.year).sort((a, b) => a - b);
+  const year = select(years.map((y) => [String(y), String(y)]), String(e.year + 1), { 'aria-label': 'Año' });
+  const name = el('input', { type: 'text', value: e.name, maxlength: 200 });
+  const err = el('div', { class: 'err', role: 'alert' });
+  openModal({ title: 'Clonar acción', body: el('div', { class: 'fields' }, el('p', { class: 'muted wide' }, `Se copia «${e.name}» con sus tareas (todas sin hacer, sin importes ni resultados) y las fechas pasan al año que elijas.`), field('¿A qué año la clonamos?', year), field('Nombre', name), el('div', { class: 'field wide' }, err)),
+    actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Clonar', keep: true, run: async (_e, close) => {
+      err.textContent = '';
+      try { const r = await api('POST', `/api/events/${e.id}/clone`, { year: Number(year.value), name: name.value }); await loadEvents(); close(); toast(`Creada ${r.event.ref} con ${r.tasks} tareas`); location.hash = `#/evento/${r.event.id}`; }
+      catch (er) { err.textContent = er.message; return false; }
+    } }] });
+}
 
 const LOG_LABEL = { status: 'el estado', owner_id: 'el responsable', starts_on: 'la fecha de inicio', ends_on: 'la fecha de fin', cost: 'el coste', invoiced: 'la facturación', name: 'el nombre', archived: 'el archivado' };
 function logText(l) {
@@ -40,7 +64,7 @@ function logText(l) {
   return `cambió ${Object.entries(d).map(([k, v]) => `${LOG_LABEL[k] || k}: ${show(k, v.de)} → ${show(k, v.a)}`).join(' · ')}`;
 }
 
-export async function eventView(id) {
+export async function eventView(id, openTaskId = null) {
   const data = await api('GET', `/api/events/${id}`);
   let e = data.event, tasks = data.tasks;
   const unlocked = Boolean(data.costs_unlocked);
@@ -101,6 +125,7 @@ export async function eventView(id) {
         select([['', 'Sin responsable'], ...state.meta.users.map((u) => [u.id, firstName(u)])], t.owner_id || '', { 'aria-label': 'Responsable de la tarea', onchange: (ev) => upTask(t, { owner_id: ev.target.value || null }) }),
         el('input', { type: 'date', value: t.due_on || '', 'aria-label': 'Fecha límite', onchange: (ev) => upTask(t, { due_on: ev.target.value || null }) }),
         !unlocked ? null : el('input', { type: 'number', min: 0, step: '0.01', placeholder: '€', value: t.cost ?? '', 'aria-label': 'Coste de la tarea', onchange: (ev) => upTask(t, { cost: ev.target.value === '' ? null : ev.target.value }) }),
+        el('button', { class: `clipbtn${t.files?.length ? ' has' : ''}`, type: 'button', title: t.files?.length ? `${t.files.length} archivo${t.files.length === 1 ? '' : 's'}: pulsa para verlos` : 'Sin archivos: pulsa para añadir', 'aria-label': t.files?.length ? `${t.files.length} archivos` : 'Sin archivos', onclick: () => taskModal(t) }, icon('clip'), t.files?.length ? String(t.files.length) : null),
         el('button', { class: 'btn ghost small more', type: 'button', onclick: () => taskModal(t) }, 'Ampliar tarea')));
   };
   function drawTasks() {
@@ -127,13 +152,38 @@ export async function eventView(id) {
   newTitle.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addTask(); } });
 
   function taskModal(t) {
+
+    // Archivos de la tarea: lista, subida a la carpeta de Drive de la acción y botón para quitarlos de la tarea
+    const filesBox = el('div', { class: 'tfiles' });
+    const sizeOf = (n) => (n == null ? '' : n > 1e6 ? `${(n / 1e6).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
+    const drawFiles = () => {
+      const msg = el('span', { class: 'muted' });
+      const dest = select(['Creatividades', 'Documentación', 'Producción'].map((x) => [x, x]), 'Documentación', { 'aria-label': 'Carpeta de destino' });
+      const pick = el('input', { type: 'file', multiple: true, hidden: true, onchange: async (ev) => {
+        for (const file of ev.target.files) {
+          msg.textContent = `Subiendo ${file.name}…`;
+          try {
+            const r = await fetch(`/api/tasks/${t.id}/files?folder=${encodeURIComponent(dest.value)}&name=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { 'X-Upload': '1', 'Content-Type': file.type || 'application/octet-stream' }, body: file, credentials: 'same-origin' });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+            t.files = [...(t.files || []).filter((x) => x.id !== j.file.id), j.file];
+          } catch (er) { toast(`${file.name}: ${er.message}`, true); }
+        }
+        drawFiles(); drawTasks();
+      } });
+      filesBox.replaceChildren(
+        t.files?.length ? el('ul', { class: 'flist' }, t.files.map((f) => el('li', {}, icon('clip'), el('a', { href: f.url, target: '_blank', rel: 'noopener' }, f.name), el('small', { class: 'muted' }, `${f.folder}${f.size ? ` · ${sizeOf(f.size)}` : ''}`),
+          el('button', { class: 'btn ghost small', type: 'button', 'aria-label': `Quitar ${f.name} de la tarea`, onclick: async () => { if (!(await confirmBox('Quitar archivo', `¿Quitar «${f.name}» de esta tarea? El archivo se queda en Drive.`, 'Quitar'))) return; try { await api('DELETE', `/api/task-files/${f.id}`); t.files = t.files.filter((x) => x.id !== f.id); drawFiles(); drawTasks(); } catch (er) { toast(er.message, true); } } }, 'Quitar')))) : el('p', { class: 'muted', style: { margin: '0 0 8px' } }, 'Esta tarea no tiene archivos.'),
+        data.drive_enabled ? el('div', { class: 'tupload' }, dest, el('button', { class: 'btn small', type: 'button', onclick: () => pick.click() }, icon('plus'), 'Subir archivo'), pick, msg) : el('p', { class: 'muted' }, 'Google Drive no está configurado en el servidor.'));
+    };
+    drawFiles();
     const summary = el('textarea', { rows: 4 }, t.summary || '');
     const prio = select([['', 'Sin prioridad'], ...Object.entries(state.meta.priorities)], t.priority || '');
     const sec = select([['', 'Sin sección'], ...state.meta.sections.map((s) => [s.id, s.name])], t.section_id || '');
     const link = el('input', { type: 'url', placeholder: 'https://… (carpeta de Drive, presupuesto…)', value: t.links?.[0]?.url || '' });
     const sub = el('input', { type: 'text', placeholder: 'Nueva subtarea…' });
     openModal({ title: t.title, wide: true,
-      body: el('div', { class: 'fields' }, field('Sección', sec), field('Prioridad', prio), field('Enlace', link), el('div', { class: 'field wide' }, el('label', {}, 'Resumen'), summary), field('Añadir una subtarea', sub)),
+      body: el('div', { class: 'fields' }, field('Sección', sec), field('Prioridad', prio), field('Enlace', link), el('div', { class: 'field wide' }, el('label', {}, 'Resumen'), summary), el('div', { class: 'field wide' }, el('label', {}, 'Archivos de esta tarea'), filesBox), field('Añadir una subtarea', sub)),
       actions: [
         { label: 'Borrar tarea', cls: 'danger', run: async () => { if (!(await confirmBox('Borrar tarea', `¿Borrar «${t.title}»${tasks.some((x) => x.parent_id === t.id) ? ' y sus subtareas' : ''}?`, 'Borrar', true))) return false; try { await api('DELETE', `/api/tasks/${t.id}`); tasks = tasks.filter((x) => x.id !== t.id && x.parent_id !== t.id); drawTasks(); refreshSummary(); } catch (er) { toast(er.message, true); } } },
         { label: 'Guardar', run: async () => {
@@ -193,6 +243,7 @@ export async function eventView(id) {
     el('p', {}, el('a', { href: `#/anio/${e.year}`, class: 'muted' }, `← Acciones ${e.year}`)),
     el('div', { class: 'evt-h' }, el('div', { class: 'line' }, el('span', { class: 'ref' }, e.ref), el('span', { class: 'cli', style: { '--c': client?.color } }, client?.name || ''), statusSel, prioSel, saved,
       el('span', { style: { marginLeft: 'auto', display: 'flex', gap: '8px' } },
+        el('button', { class: 'btn ghost small', type: 'button', onclick: () => cloneModal(e) }, icon('copy'), 'Clonar'),
         el('button', { class: 'btn ghost small', type: 'button', onclick: async () => { if (!(await confirmBox('Archivar acción', `¿Archivar «${e.name}»? Dejará de salir en las listas (un administrador puede borrarla del todo).`, 'Archivar'))) return; await api('DELETE', `/api/events/${id}`); await loadEvents(); toast('Acción archivada'); location.hash = `#/anio/${e.year}`; } }, 'Archivar'),
         state.me.is_admin ? el('button', { class: 'btn danger small', type: 'button', onclick: async () => { if (!(await confirmBox('Borrar para siempre', `¿Borrar «${e.name}» con todas sus tareas? No se puede deshacer.`, 'Borrar para siempre', true))) return; await api('DELETE', `/api/events/${id}?hard=1`); await loadEvents(); toast('Acción borrada'); location.hash = `#/anio/${e.year}`; } }, 'Borrar') : null)),
       title),
@@ -216,10 +267,11 @@ export async function eventView(id) {
           field('Valoración (1 a 5)', stars),
           area('kpi_result', 'Resultado / KPI', 'wide', 3), area('sponsors', 'Patrocinadores', 'wide', 2), area('incidents', 'Incidencias', 'wide', 3), area('improvements', 'Qué mejorar la próxima vez', 'wide', 3),
           el('div', { class: 'field wide note-next' }, el('label', {}, 'Notas para el año que viene'), el('textarea', { rows: 4, oninput: (ev) => set('notes_next', ev.target.value) }, e.notes_next ?? '')))),
-        el('section', { class: 'card sec' }, el('h3', {}, 'Enlaces y archivos', el('small', { class: 'muted' }, 'carpetas de Drive, bases legales, informes…')), linksBox)),
+        el('section', { class: 'card sec' }, el('h3', {}, 'Enlaces y archivos', el('small', { class: 'muted' }, 'carpetas de Drive, bases legales, informes…')), e.drive_url ? el('p', {}, el('a', { class: 'btn ghost small', href: e.drive_url, target: '_blank', rel: 'noopener' }, icon('clip'), 'Abrir la carpeta de esta acción en Drive')) : null, linksBox)),
       el('aside', { class: 'side' },
         el('section', { class: 'card sec' }, el('h3', {}, 'Resumen'), summaryBox, e.notion_url ? el('p', {}, el('a', { href: e.notion_url, target: '_blank', rel: 'noopener', class: 'muted' }, 'Ver la ficha original en Notion')) : null),
         el('section', { class: 'card sec' }, el('h3', {}, 'Actividad'), logBox))));
   drawTasks(); refreshLog();
+  if (openTaskId) setTimeout(() => { const t = tasks.find((x) => x.id === openTaskId); if (t) taskModal(t); }, 50);   // enlace desde el aviso de pendientes
   return page;
 }

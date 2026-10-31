@@ -4,6 +4,7 @@ import { dashboardView } from './dashboard.js';
 import { listView } from './list.js';
 import { eventView, newEventModal } from './event.js';
 import { adminView } from './admin.js';
+import { maybeShowPending } from './pendientes.js';
 import { informesView } from './informes.js';
 
 const app = document.getElementById('app');
@@ -106,7 +107,7 @@ async function route() {
     else if (r.name === 'anio') node = await listView({ year: Number(r.arg) });
     else if (r.name === 'tipo') node = await listView({ type: r.arg });
     else if (r.name === 'informes') node = await informesView();
-    else if (r.name === 'evento') node = await eventView(r.arg);
+    else if (r.name === 'evento') node = await eventView(r.arg, r.q.get('t'));
     else if (r.name === 'admin') node = state.me.is_admin ? await adminView(r.arg || 'equipo') : el('div', { class: 'page' }, el('p', {}, 'No tienes permiso para ver esto.'));
     else node = el('div', { class: 'page' }, el('h1', {}, 'No encontrado'), el('p', { class: 'muted' }, 'Esa página no existe. '), el('a', { href: '#/' }, 'Volver al inicio'));
     if (mine !== token) return;
@@ -138,6 +139,7 @@ export async function boot() {
   await Promise.all([loadMeta(), loadEvents()]);
   shell();
   route();
+  maybeShowPending();
 }
 window.addEventListener('hashchange', route);
 bus.addEventListener('events', () => renderSide());

@@ -30,14 +30,17 @@ const folderFor = (section, name) => {
 };
 const safe = (n) => String(n).replace(/[\\/:*?"<>|]/g, '-').slice(0, 180);
 
-const rows = (await q(`select t.id, t.title, t.notion_id, s.name section, e.ref, e.drive_folder_id from tasks t join events e on e.id = t.event_id left join task_sections s on s.id = t.section_id where t.notion_id is not null and e.drive_folder_id is not null order by e.seq, t.position`)).rows.filter((t) => withFiles.has(t.notion_id));
+const rows = (await q(`select t.id, t.event_id, t.title, t.notion_id, s.name section, e.ref, e.drive_folder_id from tasks t join events e on e.id = t.event_id left join task_sections s on s.id = t.section_id where t.notion_id is not null and e.drive_folder_id is not null order by e.seq, t.position`)).rows.filter((t) => withFiles.has(t.notion_id));
 const subs = new Map();
 const sub = async (ev, name) => { const k = `${ev.drive_folder_id}|${name}`; if (!subs.has(k)) subs.set(k, await ensureFolder(ev.drive_folder_id, name)); return subs.get(k); };
-const existing = new Map();
-const has = async (folderId, name) => { if (!existing.has(folderId)) existing.set(folderId, new Set((await listChildren(folderId)).map((f) => f.name))); return existing.get(folderId); };
+const existing = new Map();   // carpeta → { nombre → id }
+const has = async (folderId) => { if (!existing.has(folderId)) existing.set(folderId, new Map((await listChildren(folderId)).map((f) => [f.name, f.id]))); return existing.get(folderId); };
+const record = (t, name, folder, id, size, mime) => q('insert into task_files (task_id, event_id, name, folder, drive_file_id, size, mime) values ($1,$2,$3,$4,$5,$6,$7) on conflict (task_id, drive_file_id) do nothing', [t.id, t.event_id, name, folder, id, size ?? null, mime || '']);
 
 let found = 0, up = 0, skipped = 0, failed = [];
+console.error('tareas con archivos:', rows.length);
 for (const t of rows) {
+  if (process.env.DEBUG) console.error('→', t.ref, t.title);
   let page; try { page = await notion(`/pages/${t.notion_id}`); } catch (e) { if (e.status === 404) { failed.push(`${t.ref} · ${t.title}: la integración no ve la página`); continue; } throw e; }
   const files = page.properties?.Archivos?.files || [];
   for (const f of files) {
@@ -46,13 +49,14 @@ for (const t of rows) {
     const folderName = folderFor(t.section, f.name);
     if (DRY) { console.log(`${t.ref} · ${t.section ?? '—'} · ${f.name}  →  ${folderName}`); continue; }
     try {
-      const folder = await sub(t, folderName), names = await has(folder, safe(f.name));
-      if (names.has(safe(f.name))) { skipped++; continue; }
+      const folder = await sub(t, folderName), names = await has(folder), nm = safe(f.name);
+      if (names.has(nm)) { await record(t, nm, folderName, names.get(nm)); skipped++; continue; }   // ya estaba en Drive: solo se enlaza a la tarea
       const r = await fetch(url, { signal: AbortSignal.timeout(300_000) });
       if (!r.ok) throw new Error(`descarga ${r.status}`);
-      await uploadFile(folder, safe(f.name), Buffer.from(await r.arrayBuffer()), r.headers.get('content-type')?.split(';')[0] || 'application/octet-stream');
-      names.add(safe(f.name)); up++; console.log(`✓ ${t.ref} ${folderName}/${f.name}`);
-    } catch (e) { failed.push(`${t.ref} · ${f.name}: ${e.message}`); }
+      const buf = Buffer.from(await r.arrayBuffer()), mime = r.headers.get('content-type')?.split(';')[0] || 'application/octet-stream';
+      const up1 = await uploadFile(folder, nm, buf, mime);
+      names.set(nm, up1.id); await record(t, nm, folderName, up1.id, buf.length, mime); up++; console.log(`✓ ${t.ref} ${folderName}/${f.name}`);
+    } catch (e) { failed.push(`${t.ref} · ${f.name}: ${e.message}`); console.error('✗', t.ref, f.name, e.message); }
   }
 }
 console.log(`\nArchivos en Notion: ${found} · subidos: ${up} · ya estaban: ${skipped} · con fallo: ${failed.length}`);

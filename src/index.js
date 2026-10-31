@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { q } from './db.js';
 import { hashPassword, verifyPassword, randomToken, sha256 } from './crypto.js';
 import { COOKIE, parseCookies, createSession, clearCookie, loadSession, requireUser, requireReady, requireRole, publicUser, isAdmin, tooMany } from './auth.js';
+import { driveEnabled, ensureFolder, uploadFile, ACTION_SUBFOLDERS } from './drive.js';
 import { EVENT_STATUS, TASK_STATUS, PRIORITIES, cleanEvent, cleanTask, cleanLinks, isUuid, yearFor } from './domain.js';
 import { sendInvite } from './invite.js';
 import { mailEnabled } from './mailer.js';
@@ -26,7 +27,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'same-origin');
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   // Las escrituras solo se aceptan como JSON (junto con SameSite=Strict, frena el CSRF).
-  if (req.method !== 'GET' && req.path.startsWith('/api/') && !req.is('application/json') && Number(req.headers['content-length'] || 0) > 0) return res.status(415).json({ error: 'Solo JSON' });
+  if (req.method !== 'GET' && req.path.startsWith('/api/') && !req.is('application/json') && !(req.headers['x-upload'] === '1' && /^\/api\/tasks\/[^/]+\/files$/.test(req.path)) && Number(req.headers['content-length'] || 0) > 0) return res.status(415).json({ error: 'Solo JSON' });
   next();
 });
 app.use(loadSession);
@@ -140,7 +141,7 @@ const reportsOpen = (req) => req.session.reports_until && new Date(req.session.r
 const requireReports = (req, res, next) => (reportsOpen(req) ? next() : res.status(403).json({ error: 'Introduce usuario y contraseña para ver los informes', code: 'reports_locked' }));
 app.get('/api/informes/estado', ...staff, (req, res) => res.json({ unlocked: Boolean(reportsOpen(req)), until: reportsOpen(req) ? req.session.reports_until : null }));
 app.post('/api/informes/acceso', ...staff, wrap(async (req, res) => {
-  if (tooMany(`informes:${req.user.id}`, 6, 15 * 60e3)) throw fail(429, 'Demasiados intentos. Espera unos minutos.');
+  if (tooMany(`informes:${req.user.id}`, 20, 15 * 60e3)) throw fail(429, 'Demasiados intentos. Espera unos minutos.');
   const email = String(req.body.email || '').trim().toLowerCase();
   if (email !== req.user.email.toLowerCase() || !verifyPassword(String(req.body.password || ''), req.user.password_hash)) throw fail(401, 'Usuario o contraseña incorrectos');
   const r = await q(`update sessions set reports_until = now() + interval '${REPORTS_MINUTES} minutes' where id = $1 returning reports_until`, [req.session.id]);
@@ -195,7 +196,35 @@ app.get('/api/events/:id', ...staff, wrap(async (req, res) => {
     q('select user_id from event_collaborators where event_id = $1', [e.id]),
     q(`select t.* from tasks t left join task_sections s on s.id = t.section_id where t.event_id = $1 order by s.position nulls last, t.position, t.created_at`, [e.id]),
   ]);
-  res.json({ event: { ...e, collaborators: collabs.rows.map((r) => r.user_id) }, tasks: tasks.rows });
+  const files = (await q('select id, task_id, name, folder, drive_file_id, size, created_at from task_files where event_id = $1 order by created_at', [e.id])).rows;
+  const withFiles = tasks.rows.map((t) => ({ ...t, files: files.filter((f) => f.task_id === t.id).map((f) => ({ id: f.id, name: f.name, folder: f.folder, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view` })) }));
+  res.json({ event: { ...e, collaborators: collabs.rows.map((r) => r.user_id), drive_url: e.drive_folder_id ? `https://drive.google.com/drive/folders/${e.drive_folder_id}` : null }, tasks: withFiles, drive_enabled: driveEnabled() });
+}));
+
+// ───────── Aviso diario de pendientes y tareas tipo para clonar ─────────
+const TODAY_ES = "to_char(now() at time zone 'Europe/Madrid', 'YYYY-MM-DD')";
+app.get('/api/pendientes', ...staff, wrap(async (req, res) => {
+  const [tasks, toInvoice, seen] = await Promise.all([
+    q(`select t.id, t.title, t.status, t.due_on, t.owner_id, t.event_id, e.ref, e.name event_name, (t.due_on < current_date) overdue
+       from tasks t join events e on e.id = t.event_id
+       where not e.archived and e.status <> 'cancelado' and t.status not in ('finalizada', 'archivada')
+       order by (t.due_on < current_date) desc nulls last, t.due_on nulls last, e.starts_on nulls last, e.seq, t.position`),
+    q(`select e.id, e.ref, e.name, e.ends_on from events e where not e.archived and e.status = 'terminado' and not e.invoiced order by e.ends_on nulls last, e.seq`),
+    q(`select (coalesce(prefs->>'pending_seen', '') = ${TODAY_ES}) seen from team_users where id = $1`, [req.user.id]),
+  ]);
+  res.json({ tasks: tasks.rows, toInvoice: toInvoice.rows, seen_today: Boolean(seen.rows[0]?.seen) });
+}));
+app.post('/api/pendientes/visto', ...staff, wrap(async (req, res) => {
+  await q(`update team_users set prefs = coalesce(prefs, '{}'::jsonb) || jsonb_build_object('pending_seen', ${TODAY_ES}) where id = $1`, [req.user.id]);
+  res.json({ ok: true });
+}));
+app.get('/api/task-templates', ...staff, wrap(async (_req, res) => {
+  const r = await q(`select min(t.title) title, t.section_id, count(distinct t.event_id)::int count
+    from tasks t join events e on e.id = t.event_id
+    where not e.archived and t.status <> 'archivada' and length(trim(t.title)) > 2 and lower(trim(t.title)) <> 'tarea'
+    group by lower(trim(t.title)), t.section_id having count(distinct t.event_id) >= 2
+    order by count desc, min(t.title) limit 40`);
+  res.json({ templates: r.rows });
 }));
 
 app.post('/api/events', ...staff, wrap(async (req, res) => {
@@ -220,6 +249,12 @@ app.post('/api/events', ...staff, wrap(async (req, res) => {
   }
   if (Array.isArray(req.body.collaborators)) await setCollaborators(row.id, req.body.collaborators);
   await logEvent(row.id, req.user, 'crear', { name: row.name });
+  const clone = (Array.isArray(req.body.clone_tasks) ? req.body.clone_tasks : []).slice(0, 80);
+  for (const [i, c] of clone.entries()) {   // tareas tipo elegidas al crear la acción
+    const title = String(c?.title || '').trim().slice(0, 300); if (!title) continue;
+    await q('insert into tasks (event_id, position, title, status, section_id) values ($1,$2,$3,\'sin_empezar\',$4)', [row.id, i + 1, title, isUuid(c.section_id) ? c.section_id : null]);
+  }
+  ensureEventFolder({ ...row, year: row.year }).then((id) => { if (id) row.drive_folder_id = id; }).catch((e2) => console.error('[drive] carpeta de la acción:', e2.message));
   res.json({ event: row });
 }));
 
@@ -257,6 +292,79 @@ app.get('/api/events/:id/log', ...staff, wrap(async (req, res) => {
 }));
 
 // ───────── Tareas ─────────
+// ───────── Archivos de las tareas (viven en la carpeta de Drive de la acción) ─────────
+const cleanName = (n) => String(n || 'archivo').replace(/[\\/:*?"<>|\x00-\x1f]/g, '-').trim().slice(0, 180) || 'archivo';
+/** Crea (si no existe) la carpeta de la acción en Drive: raíz / año / «REF NOMBRE» con Creatividades, Documentación y Producción. */
+async function ensureEventFolder(e) {
+  if (e.drive_folder_id) return e.drive_folder_id;
+  const root = String(process.env.DRIVE_ROOT_FOLDER || '').trim();
+  if (!driveEnabled() || !root) return null;
+  const cli = (await q('select name from clients where id = $1', [e.client_id])).rows[0];   // raíz / cliente / año / «REF NOMBRE»
+  const clientFolder = await ensureFolder(root, cleanName(cli?.name || 'Sin cliente'));
+  const year = await ensureFolder(clientFolder, String(e.year));
+  const id = await ensureFolder(year, cleanName(`${e.ref} ${e.name}`));
+  for (const n of ACTION_SUBFOLDERS) await ensureFolder(id, n);
+  await q('update events set drive_folder_id = $1 where id = $2', [id, e.id]);
+  return id;
+}
+app.post('/api/tasks/:id/files', ...staff, express.raw({ type: '*/*', limit: '60mb' }), wrap(async (req, res) => {
+  if (req.headers['x-upload'] !== '1' || !Buffer.isBuffer(req.body) || !req.body.length) throw fail(400, 'No llegó ningún archivo');
+  if (!driveEnabled()) throw fail(503, 'Google Drive no está configurado');
+  if (!isUuid(req.params.id)) throw fail(404, 'No existe esa tarea');
+  const t = (await q('select t.id, t.event_id from tasks t where t.id = $1', [req.params.id])).rows[0];
+  if (!t) throw fail(404, 'No existe esa tarea');
+  const e = (await q('select id, ref, name, year, client_id, drive_folder_id from events where id = $1', [t.event_id])).rows[0];
+  const folderName = ACTION_SUBFOLDERS.includes(req.query.folder) ? req.query.folder : 'Documentación';
+  const root = await ensureEventFolder(e);
+  if (!root) throw fail(503, 'No hay carpeta de Drive para esta acción');
+  const name = cleanName(decodeURIComponent(String(req.query.name || 'archivo')));
+  const f = await uploadFile(await ensureFolder(root, folderName), name, req.body, req.headers['content-type']?.split(';')[0] || 'application/octet-stream');
+  const row = (await q('insert into task_files (task_id, event_id, name, folder, drive_file_id, size, mime, created_by) values ($1,$2,$3,$4,$5,$6,$7,$8) on conflict (task_id, drive_file_id) do update set name = excluded.name returning id, name, folder, size', [t.id, t.event_id, name, folderName, f.id, req.body.length, req.headers['content-type'] || '', req.user.id])).rows[0];
+  await logEvent(t.event_id, req.user, 'archivo subido', { name });
+  res.json({ file: { ...row, url: `https://drive.google.com/file/d/${f.id}/view` } });
+}));
+app.delete('/api/task-files/:id', ...staff, wrap(async (req, res) => {   // solo quita el vínculo con la tarea; el archivo sigue en Drive
+  if (!isUuid(req.params.id)) throw fail(404, 'No existe ese archivo');
+  const r = await q('delete from task_files where id = $1 returning event_id, name', [req.params.id]);
+  if (!r.rows[0]) throw fail(404, 'No existe ese archivo');
+  await logEvent(r.rows[0].event_id, req.user, 'archivo quitado', { name: r.rows[0].name });
+  res.json({ ok: true });
+}));
+
+// Clonar una acción a otro año: misma ficha y tareas (sin hacer, sin importes ni resultados), con las fechas movidas al año elegido.
+const shiftYear = (d, from, to) => { if (!d) return null; const [y, m, day] = String(d).split('-').map(Number); const t = new Date(Date.UTC(y + (to - from), m - 1, day)); return t.getUTCMonth() !== m - 1 ? new Date(Date.UTC(y + (to - from), m, 0)).toISOString().slice(0, 10) : t.toISOString().slice(0, 10); };
+app.post('/api/events/:id/clone', ...staff, wrap(async (req, res) => {
+  const src = await loadEvent(req.params.id);
+  const year = Number(req.body.year);
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) throw fail(400, 'Elige el año');
+  const name = String(req.body.name || src.name).trim().slice(0, 200) || src.name;
+  const from = src.starts_on ? Number(String(src.starts_on).slice(0, 4)) : src.year;
+  const client = (await q('select id, code from clients where id = $1', [src.client_id])).rows[0];
+  let row;
+  for (let attempt = 0; attempt < 4 && !row; attempt++) {
+    try {
+      row = (await q(`insert into events (client_id, seq, ref, created_by, year, name, type_id, status, priority, owner_id, starts_on, ends_on, location, description, objective, audience, links)
+        select $1, n, $2 || '-' || lpad(n::text, 3, '0'), $3, $4, $5, $6, 'sin_empezar', $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb
+        from (select coalesce(max(seq), 0) + 1 n from events where client_id = $1) s returning *`,
+        [client.id, client.code, req.user.id, year, name, src.type_id, src.priority, src.owner_id, shiftYear(src.starts_on, from, year), shiftYear(src.ends_on, from, year), src.location || '', src.description || '', src.objective || '', src.audience || '', JSON.stringify(src.links || [])])).rows[0];
+    } catch (e) { if (!/duplicate|unique/i.test(e.message) || attempt === 3) throw e; }
+  }
+  const collabs = await q('select user_id from event_collaborators where event_id = $1', [src.id]);
+  await setCollaborators(row.id, collabs.rows.map((r) => r.user_id));
+  const tasks = (await q(`select * from tasks where event_id = $1 and status <> 'archivada' order by position, created_at`, [src.id])).rows;
+  const idMap = new Map();
+  for (const t of tasks.filter((x) => !x.parent_id)) {
+    const r = await q(`insert into tasks (event_id, position, title, status, priority, section_id, owner_id, due_on, summary) values ($1,$2,$3,'sin_empezar',$4,$5,$6,$7,$8) returning id`, [row.id, t.position, t.title, t.priority, t.section_id, t.owner_id, shiftYear(t.due_on, from, year), t.summary || '']);
+    idMap.set(t.id, r.rows[0].id);
+  }
+  for (const t of tasks.filter((x) => x.parent_id && idMap.has(x.parent_id))) {
+    await q(`insert into tasks (event_id, parent_id, position, title, status, priority, section_id, owner_id, due_on, summary) values ($1,$2,$3,$4,'sin_empezar',$5,$6,$7,$8,$9)`, [row.id, idMap.get(t.parent_id), t.position, t.title, t.priority, t.section_id, t.owner_id, shiftYear(t.due_on, from, year), t.summary || '']);
+  }
+  await logEvent(row.id, req.user, 'crear', { name: row.name, clonada_de: src.ref });
+  ensureEventFolder(row).catch((e2) => console.error('[drive] carpeta de la acción:', e2.message));
+  res.json({ event: row, tasks: tasks.length });
+}));
+
 app.post('/api/events/:id/tasks', ...staff, wrap(async (req, res) => {
   const e = await loadEvent(req.params.id);
   const d = cleanTask(req.body);

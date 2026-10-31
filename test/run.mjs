@@ -181,6 +181,42 @@ console.log('Importes ocultos hasta desbloquear');
   ok('con la sesión desbloqueada se ven', again.costs_unlocked === true && again.event.cost === 123.45);
 }
 
+console.log('Pendientes y tareas tipo');
+{
+  const c = (await login('ana@avania.es')).c;
+  const meta2 = (await c.call('GET', '/api/meta')).j, cli = meta2.clients[0].id, sec = meta2.sections[0].id;
+  const mk = async (name, tasks) => (await c.call('POST', '/api/events', { name, client_id: cli, starts_on: '2026-05-01', clone_tasks: tasks })).j.event;
+  const a = await mk('Origen 1', [{ title: 'Veleros y A3', section_id: sec }, { title: 'Bases legales', section_id: sec }]);
+  const b = await mk('Origen 2', [{ title: 'veleros y a3', section_id: sec }]);
+  const det = (await c.call('GET', `/api/events/${a.id}`)).j;
+  ok('al crear se clonan las tareas elegidas', det.tasks.length === 2 && det.tasks.every((t) => t.status === 'sin_empezar'));
+  const tpl = (await c.call('GET', '/api/task-templates')).j.templates;
+  ok('el recopilatorio ofrece las que se repiten', tpl.some((x) => /veleros/i.test(x.title) && x.count >= 2) && !tpl.some((x) => /bases legales/i.test(x.title)));
+  const p1 = (await c.call('GET', '/api/pendientes')).j;
+  ok('pendientes trae las tareas sin terminar', p1.tasks.some((t) => t.event_id === a.id) && p1.seen_today === false);
+  await c.call('POST', '/api/pendientes/visto');
+  ok('tras verlo no vuelve a salir hoy', (await c.call('GET', '/api/pendientes')).j.seen_today === true);
+  ok('el aviso no lleva importes', !JSON.stringify(p1).includes('"cost"'));
+  await c.call('DELETE', `/api/events/${a.id}?hard=1`); await c.call('DELETE', `/api/events/${b.id}?hard=1`);
+}
+
+console.log('Clonar acción');
+{
+  const c = (await login('ana@avania.es')).c;
+  const meta3 = (await c.call('GET', '/api/meta')).j, sec = meta3.sections[0].id;
+  const or_ = await c.call('POST', '/api/events', { name: 'Original', client_id: meta3.clients[0].id, starts_on: '2026-02-28', ends_on: '2026-03-02', cost: 500, clone_tasks: [{ title: 'Una', section_id: sec }, { title: 'Dos', section_id: sec }] }); if (!or_.j.event) console.log('crear →', or_.s, JSON.stringify(or_.j)); const o = or_.j.event;
+  const full = (await c.call('GET', `/api/events/${o.id}`)).j;
+  await c.call('PATCH', `/api/tasks/${full.tasks[0].id}`, { status: 'finalizada', due_on: '2026-02-20', cost: 40 });
+  const clr = await c.call('POST', `/api/events/${o.id}/clone`, { year: 2027 }); const cl = clr.j; if (!cl.event) console.log('clone →', clr.s, JSON.stringify(cl));
+  ok('se clona con nueva referencia y año', cl.event.year === 2027 && cl.event.ref !== o.ref && cl.event.status === 'sin_empezar');
+  ok('las fechas pasan al año elegido', cl.event.starts_on === '2027-02-28' && cl.event.ends_on === '2027-03-02');
+  const cd = (await c.call('GET', `/api/events/${cl.event.id}`)).j;
+  ok('copia las tareas sin hacer y sin importes', cd.tasks.length === 2 && cd.tasks.every((t) => t.status === 'sin_empezar' && t.cost === null) && cd.event.cost === null);
+  ok('mueve la fecha límite de las tareas', cd.tasks.some((t) => t.due_on === '2027-02-20'));
+  ok('año no válido → 400', (await c.call('POST', `/api/events/${o.id}/clone`, { year: 1800 })).s === 400);
+  await c.call('DELETE', `/api/events/${o.id}?hard=1`); await c.call('DELETE', `/api/events/${cl.event.id}?hard=1`);
+}
+
 console.log('Salud');
 ok('/api/health', (await new Client().call('GET', '/api/health')).j.ok === true);
 ok('una ruta rara de la API → 404', (await ana.call('GET', '/api/nada')).s === 404);
