@@ -469,9 +469,12 @@ app.post('/api/events/:id/produccion', ...staff, wrap(async (req, res) => {
   const url = folderUrl(prod), who = req.user.name || req.user.email;
   const message = String(req.body.message || '').trim().slice(0, 2000);
   const replyTo = process.env.PRODUCCION_REPLY_TO || 'elvira.vila@avania.es';
-  const fromAddr = (process.env.MAIL_FROM || '').match(/<([^>]+)>/)?.[1] || process.env.SMTP_USER;
+  // Buzón propio de producción (PROD_SMTP_* en .env); si no está completo se usa el buzón general del servidor
+  const own = process.env.PROD_SMTP_USER && process.env.PROD_SMTP_PASS ? { host: process.env.PROD_SMTP_HOST || 'smtp.gmail.com', port: Number(process.env.PROD_SMTP_PORT || 465), user: process.env.PROD_SMTP_USER, pass: process.env.PROD_SMTP_PASS } : null;
+  const fromAddr = own ? own.user : (process.env.MAIL_FROM || '').match(/<([^>]+)>/)?.[1] || process.env.SMTP_USER;
+  const fromName = own ? (process.env.PROD_FROM_NAME || 'AVANIA Marketing') : 'Elvira Vila · AVANIA';
   await sendMail({
-    to: prov.email, cc: replyTo, replyTo, from: `"Elvira Vila · AVANIA" <${fromAddr}>`,
+    to: prov.email, cc: replyTo, replyTo, from: `"${fromName}" <${fromAddr}>`, smtp: own || undefined,
     subject: `Producción · ${e.ref} ${e.name}`, title: `Piezas para producción: ${e.name}`,
     paragraphs: [message || `Hola. Te enviamos las piezas aprobadas de «${e.name}» para producción.`, `Piezas (${chosen.length}): ${chosen.map((f) => f.name).join(', ')}.`, shared ? 'Te hemos dado acceso a la carpeta; si no puedes abrirla, respóndenos a este correo.' : 'Si no puedes abrir la carpeta, respóndenos a este correo y te damos acceso.'],
     button: { label: 'Abrir las piezas en Drive', url },
