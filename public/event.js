@@ -274,7 +274,6 @@ export async function eventView(id, openTaskId = null) {
         catch (er) { err.textContent = er.message; return false; }
       } }] });
   }
-  const prioSel = select(Object.entries(state.meta.priorities), e.priority, { 'aria-label': 'Prioridad', onchange: (ev) => set('priority', ev.target.value) });
   const title = el('input', { class: 'title', type: 'text', value: e.name, maxlength: 200, 'aria-label': 'Nombre de la acción', oninput: (ev) => set('name', ev.target.value) });
 
   // Colaboradores
@@ -457,7 +456,7 @@ export async function eventView(id, openTaskId = null) {
     const late = l.filter((t) => t.due_on && t.due_on < today() && t.status !== 'finalizada').length;
     const tcost = l.reduce((n, t) => n + (t.cost || 0), 0);
     const row = (k, v) => [el('dt', {}, k), el('dd', {}, v)];
-    summaryBox.replaceChildren(...row('Estado', statusBadge(state.meta.eventStatus[e.status], STATUS_COLOR[e.status])), ...row('Tareas hechas', `${done} de ${l.length}`), ...row('Tareas vencidas', String(late)),
+    summaryBox.replaceChildren(...row('Estado', statusSel), ...row('Tareas hechas', `${done} de ${l.length}`), ...row('Tareas vencidas', String(late)),
       ...row('Importe de facturación', !unlocked ? lockedChip() : e.budget != null ? fmtMoney(e.budget) : '—'), ...row('Coste de las tareas', !unlocked ? lockedChip() : el('button', { class: 'linkbtn', type: 'button', title: 'Ver el desglose por sección', onclick: () => costModal(e, tasks, state.meta.sections) }, tcost ? fmtMoney(tcost) : '—', ' ▾')),
       ...(!unlocked || e.budget == null ? [] : [...row('Resultado', el('strong', { class: Number(e.budget) - tcost < 0 ? 'neg' : 'pos' }, fmtMoney(Number(e.budget) - tcost) || '0 €')), ...(Number(e.budget) > 0 ? row('Margen', `${Math.round(((Number(e.budget) - tcost) / Number(e.budget)) * 100)} %`) : [])]), ...row('Facturado', e.invoiced ? 'Sí' : 'No'), ...(resultsLink ? row('Resultados', el('a', { href: resultsLink.url, target: '_blank', rel: 'noopener' }, 'Archivo de resultados')) : []));
   }
@@ -471,7 +470,7 @@ export async function eventView(id, openTaskId = null) {
   // ── Página ──
   const page = el('div', { class: 'page', 'data-title': e.name },
     el('p', {}, el('a', { href: `#/anio/${e.year}`, class: 'muted' }, `← Acciones ${e.year}`)),
-    el('div', { class: 'evt-h' }, el('div', { class: 'line' }, el('span', { class: 'ref' }, e.ref), el('span', { class: 'cli', style: { '--c': client?.color } }, client?.name || ''), statusSel, prioSel, saved,
+    el('div', { class: 'evt-h' }, el('div', { class: 'line' }, el('span', { class: 'ref' }, e.ref), el('span', { class: 'cli', style: { '--c': client?.color } }, client?.name || ''), saved,
       el('span', { style: { marginLeft: 'auto', display: 'flex', gap: '8px' } },
         el('button', { class: 'btn ghost small', type: 'button', onclick: () => cloneModal(e) }, icon('copy'), 'Clonar'),
         e.drive_url ? el('button', { class: 'btn small', type: 'button', onclick: () => productionModal(e) }, 'Enviar a producción') : null,

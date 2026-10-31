@@ -495,3 +495,6 @@ main.auth-card .err { min-height: 18px; }
 .closecost { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; }
 .costrow { display: flex; align-items: center; justify-content: space-between; gap: 14px; } .costrow input { max-width: 160px; text-align: right; } .costrow .neg { color: #b91c1c; }
 .closeform > p.wide { grid-column: 1 / -1; }
+/* Móvil: filas de edición (enlaces, ubicaciones…) en varias líneas */
+.editrow input { min-width: 0; }
+@media (max-width: 860px) { .editrow { flex-wrap: wrap; } .editrow input[type=text], .editrow input[type=url] { flex: 1 1 100% !important; max-width: none !important; } .card.sec { min-width: 0; } .card.sec a, .card.sec .nm { overflow-wrap: anywhere; } }

@@ -65,3 +65,5 @@
 - SSL: certificado de events.goavania.com válido (Let's Encrypt, cadena OK); el aviso de Chrome «no segura» no se reproduce en el servidor.
 - 123 pruebas.
 - SSL (revisión final del 31-oct): SSL Labs da **A** a events.goavania.com (TLS 1.2/1.3, sin problemas de cadena, sin avisos). Se añade la cabecera `Strict-Transport-Security` (1 año). Si Chrome sigue marcando «no segura», el problema está en ese navegador/equipo, no en el servidor.
+- **Estado en el Resumen** (a petición): el desplegable de estado vive ahora **en la tarjeta Resumen** (fila «Estado»); se quita de la cabecera (junto a ALB-001 y el cliente) y se elimina el selector de prioridad Baja/Media/Alta de la ficha. Elegir «Terminado» sigue abriendo la ventana de cierre.
+- **Móvil, Enlaces y archivos**: las filas de enlaces (`.editrow`) se desbordaban y la página se corría a la izquierda; ahora envuelven en varias líneas a ≤860 px.

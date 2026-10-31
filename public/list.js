@@ -81,7 +81,7 @@ export async function listView(scope) {
   function drawBoard(list) {
     const cols = Object.entries(state.meta.eventStatus).map(([key, label]) => {
       const cards = list.filter((e) => e.status === key);
-      const col = el('div', { class: 'bcol', 'data-status': key },   // el estado solo se cambia en la ficha, arriba, junto al nombre
+      const col = el('div', { class: 'bcol', 'data-status': key },   // el estado solo se cambia en la ficha, en el Resumen
       el('h4', {}, el('i', { class: 'dot', style: { width: '8px', height: '8px', borderRadius: '50%', background: STATUS_COLOR[key] } }), label, el('small', { class: 'muted' }, String(cards.length))),
         cards.map((e) => el('a', { class: 'card bcard', href: `#/evento/${e.id}`},
           el('div', { class: 'top' }, el('span', { class: 'ref' }, e.ref), cliChip(e), typeChip(e)), el('div', { class: 'nm' }, e.name),
