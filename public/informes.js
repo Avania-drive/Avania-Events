@@ -38,15 +38,18 @@ function groupOf(e, by) {
 }
 
 function gate(onOk) {
-  const email = el('input', { type: 'email', autocomplete: 'username', required: true, autofocus: true, placeholder: 'tu correo' });
-  const pw = el('input', { type: 'password', autocomplete: 'current-password', required: true });
-  const err = el('div', { class: 'err', role: 'alert' });
-  const form = el('form', { class: 'card gate', onsubmit: async (ev) => {
+  const email = el('input', { type: 'email', id: 'gate-user', name: 'usuario', autocomplete: 'username', required: true, placeholder: 'tu correo' });
+  const pw = el('input', { type: 'password', id: 'gate-pass', name: 'clave', autocomplete: 'current-password', required: true });
+  const err = el('div', { class: 'gate-err', role: 'alert' });
+  const row = (label, input) => el('div', { class: 'gate-row' }, el('label', { for: input.id }, label), input);
+  return el('div', { class: 'gate-wrap' }, el('form', { class: 'card gate', onsubmit: async (ev) => {
     ev.preventDefault(); err.textContent = '';
     try { await api('POST', '/api/informes/acceso', { email: email.value, password: pw.value }); onOk(); } catch (e) { err.textContent = e.message; pw.value = ''; pw.focus(); }
-  } }, el('h2', {}, 'Acceso a informes'), el('p', { class: 'muted' }, 'Los informes incluyen importes. Escribe tu usuario y tu contraseña para abrirlos; se vuelven a cerrar a los 30 minutos.'),
-    field('Usuario (correo)', email), field('Contraseña', pw), err, el('button', { class: 'btn', type: 'submit' }, 'Abrir informes'));
-  return form;
+  } },
+    el('h2', {}, 'Acceso a informes'),
+    el('p', { class: 'gate-hint' }, 'Los informes incluyen importes. Escribe tu usuario y tu contraseña para abrirlos. Se cierran solos a los 30 minutos.'),
+    row('Usuario (correo)', email), row('Contraseña', pw), err,
+    el('button', { class: 'btn gate-btn', type: 'submit' }, 'Abrir informes')));
 }
 
 export async function informesView() {
