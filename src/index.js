@@ -28,6 +28,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000');   // el navegador entra siempre por https
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   // Las escrituras solo se aceptan como JSON (junto con SameSite=Strict, frena el CSRF).
   if (req.method !== 'GET' && req.path.startsWith('/api/') && !req.is('application/json') && !(req.headers['x-upload'] === '1' && /^\/api\/(tasks|events)\/[^/]+\/(files|photos)$/.test(req.path)) && Number(req.headers['content-length'] || 0) > 0) return res.status(415).json({ error: 'Solo JSON' });
