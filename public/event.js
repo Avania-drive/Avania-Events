@@ -128,6 +128,49 @@ function lockBanner(e, lock, isSuper) {
 }
 
 // Clonar una acción a otro año (copia la ficha y las tareas, todas sin hacer y sin importes)
+// Desglose de costes de la acción: línea por línea y por sección, para facturar. Se puede imprimir/guardar en PDF o bajar para Excel.
+function costModal(e, tasks, sections) {
+  const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const eur = (n) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Number(n) || 0);
+  const live = tasks.filter((t) => t.status !== 'archivada');
+  const names = new Map(sections.map((s) => [s.id, s.name]));
+  const order = [...sections.map((s) => s.id), null];
+  const groups = order.map((sid) => ({ name: sid ? names.get(sid) : 'Sin sección', list: live.filter((t) => (t.section_id || null) === sid && Number(t.cost) > 0) })).filter((g) => g.list.length);
+  const sub = (g) => g.list.reduce((n, t) => n + Number(t.cost), 0);
+  const total = groups.reduce((n, g) => n + sub(g), 0);
+  const sinCoste = live.length - groups.reduce((n, g) => n + g.list.length, 0);
+  const client = clientOf(e.client_id)?.name || '';
+  const head = `${e.ref} · ${e.name}${client ? ` (${client})` : ''}`;
+  const dates = e.starts_on ? `${fmtDate(e.starts_on)}${e.ends_on && e.ends_on !== e.starts_on ? ` – ${fmtDate(e.ends_on)}` : ''}` : 'Sin fecha';
+  const bill = e.invoiced ? 'Facturada' : 'Pendiente de facturar';
+
+  const table = el('div', { class: 'costtab' }, groups.length ? groups.map((g) => el('div', { class: 'costsec' },
+    el('div', { class: 'costh' }, el('b', {}, g.name), el('b', {}, fmtMoney(sub(g)))),
+    g.list.map((t) => el('div', { class: 'costline' }, el('span', {}, t.title), el('span', {}, fmtMoney(t.cost)))))) : el('p', { class: 'muted' }, 'Ninguna tarea tiene coste anotado.'),
+    el('div', { class: 'costtotal' }, el('span', {}, 'Total de las tareas'), el('b', {}, fmtMoney(total))),
+    e.cost != null ? el('div', { class: 'costline' }, el('span', {}, 'Coste anotado en la acción'), el('span', {}, fmtMoney(e.cost))) : null,
+    el('p', { class: 'muted', style: { margin: '10px 0 0' } }, `${bill}${sinCoste ? ` · ${sinCoste} tarea${sinCoste === 1 ? '' : 's'} sin coste no aparece${sinCoste === 1 ? '' : 'n'}` : ''}`));
+
+  const csv = () => {
+    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const num = (n) => String(Number(n)).replace('.', ',');
+    const rows = [[head], [`Fechas: ${dates}`, bill], [], ['Sección', 'Tarea', 'Importe (€)']];
+    for (const g of groups) { for (const t of g.list) rows.push([g.name, t.title, num(t.cost)]); rows.push([g.name, 'Subtotal', num(sub(g))]); }
+    rows.push([], ['', 'Total de las tareas', num(total)]);
+    if (e.cost != null) rows.push(['', 'Coste anotado en la acción', num(e.cost)]);
+    const blob = new Blob(['﻿' + rows.map((r) => r.map(cell).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = el('a', { href: URL.createObjectURL(blob), download: `costes-${e.ref}.csv` }); document.body.append(a); a.click(); a.remove();
+  };
+  const print = () => {
+    const w = window.open('', '_blank');
+    if (!w) { toast('El navegador ha bloqueado la ventana de impresión', true); return; }
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>Costes ${esc(e.ref)}</title><style>body{font:14px/1.45 Inter,Arial,sans-serif;color:#1c2b2b;margin:32px}h1{font-size:20px;margin:0 0 4px}p{margin:2px 0;color:#555}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{padding:6px 8px;text-align:left;border-bottom:1px solid #ddd}td.n,th.n{text-align:right;white-space:nowrap}tr.s td{font-weight:700;background:#f3f6f6}tr.t td{font-weight:700;font-size:16px;border-top:2px solid #1c2b2b;border-bottom:0}</style><h1>${esc(head)}</h1><p>${esc(dates)} · ${esc(bill)}</p><table><tr><th>Sección</th><th>Tarea</th><th class="n">Importe</th></tr>${groups.map((g) => g.list.map((t) => `<tr><td>${esc(g.name)}</td><td>${esc(t.title)}</td><td class="n">${eur(t.cost)}</td></tr>`).join('') + `<tr class="s"><td colspan="2">Subtotal ${esc(g.name)}</td><td class="n">${eur(sub(g))}</td></tr>`).join('')}<tr class="t"><td colspan="2">Total de las tareas</td><td class="n">${eur(total)}</td></tr>${e.cost != null ? `<tr><td colspan="2">Coste anotado en la acción</td><td class="n">${eur(e.cost)}</td></tr>` : ''}</table>`);
+    w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+  };
+  openModal({ title: 'Desglose de costes', wide: true, body: el('div', {}, el('p', { style: { margin: '0 0 12px' } }, el('b', {}, head), el('br'), el('span', { class: 'muted' }, dates)), table),
+    actions: [{ label: 'Cerrar', cls: 'ghost' }, { label: 'Descargar para Excel', cls: 'ghost', keep: true, run: () => csv() }, { label: 'Imprimir / PDF', keep: true, run: () => print() }] });
+}
+
 function cloneModal(e) {
   const thisYear = new Date().getFullYear();
   const years = [...new Set([e.year + 1, thisYear, thisYear + 1, thisYear + 2, thisYear + 3])].filter((y) => y !== e.year).sort((a, b) => a - b);
@@ -372,7 +415,7 @@ export async function eventView(id, openTaskId = null) {
     const tcost = l.reduce((n, t) => n + (t.cost || 0), 0);
     const row = (k, v) => [el('dt', {}, k), el('dd', {}, v)];
     summaryBox.replaceChildren(...row('Estado', statusBadge(state.meta.eventStatus[e.status], STATUS_COLOR[e.status])), ...row('Tareas hechas', `${done} de ${l.length}`), ...row('Tareas vencidas', String(late)),
-      ...row('Coste de la acción', !unlocked ? lockedChip() : e.cost != null ? fmtMoney(e.cost) : '—'), ...row('Coste de las tareas', !unlocked ? lockedChip() : tcost ? fmtMoney(tcost) : '—'), ...row('Facturado', e.invoiced ? 'Sí' : 'No'), ...(resultsLink ? row('Resultados', el('a', { href: resultsLink.url, target: '_blank', rel: 'noopener' }, 'Archivo de resultados')) : []));
+      ...row('Coste de la acción', !unlocked ? lockedChip() : e.cost != null ? fmtMoney(e.cost) : '—'), ...row('Coste de las tareas', !unlocked ? lockedChip() : el('button', { class: 'linkbtn', type: 'button', title: 'Ver el desglose por sección', onclick: () => costModal(e, tasks, state.meta.sections) }, tcost ? fmtMoney(tcost) : '—', ' ▾')), ...row('Facturado', e.invoiced ? 'Sí' : 'No'), ...(resultsLink ? row('Resultados', el('a', { href: resultsLink.url, target: '_blank', rel: 'noopener' }, 'Archivo de resultados')) : []));
   }
   async function refreshLog() {
     try { log = (await api('GET', `/api/events/${id}/log`)).log; } catch { /* se queda lo que había */ }
