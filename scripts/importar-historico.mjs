@@ -45,7 +45,7 @@ const plan = [];   // { year, actions: [{ page, ...campos }], tasks: [{ page, ac
     tasks: P.map((p) => ({ page: p, actionId: (p.properties['Tarea padre']?.relation || []).map((r) => r.id).find((i) => ids.has(i)) })).filter((t) => t.actionId) });
 }
 
-let evNew = 0, evUpd = 0, tkNew = 0, tkUpd = 0, tkSkip = 0;
+let evNew = 0, evUpd = 0, tkNew = 0, tkUpd = 0, tkSkip = 0, tkDup = 0;
 for (const y of plan) {
   const nEv = y.actions.length;
   console.log(`\n${y.label}: ${nEv} acciones, ${y.tasks.length} tareas enlazadas`);
@@ -64,24 +64,29 @@ for (const y of plan) {
     }
   }
   const taskIdOf = {};
+  const rank = (p) => { const st = tkStatus(sel(p, 'Estado')); return st === 'finalizada' ? 0 : st === 'en_curso' ? 1 : 2; };
+  const seen = new Map();   // acción|título|sección → tarea que se conserva: las repetidas (Notion duplicó tareas en bloque) se unen en una
+  y.tasks.sort((a, b) => rank(a.page) - rank(b.page));
   for (const pass of [0, 1]) for (const t of y.tasks) {   // primero las tareas sin madre, luego las subtareas
     if (Boolean(t.parentId) !== Boolean(pass)) continue;
     const p = t.page, name = title(p);
     if (!name || /^(tarea|task)$/i.test(name)) { if (!pass) tkSkip++; continue; }
     const eid = evIdOf[t.actionId]; if (!eid) continue;
     const secName = sel(p, 'SECCION'), att = filesOf(p, ['Archivos']);
+    const dupKey = `${t.actionId}|${name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ')}|${secName}`;
+    if (!t.parentId && seen.has(dupKey)) { taskIdOf[p.id] = seen.get(dupKey); tkDup++; continue; }
     const summary = [rich(p, 'Resumen'), att.length ? `Adjuntos en Notion: ${att.join(', ')}` : ''].filter(Boolean).join('\n');
     const status = tkStatus(sel(p, 'Estado')), parent = t.parentId ? taskIdOf[t.parentId] ?? null : null;
     const v = [name.slice(0, 300), status, PRIO[sel(p, 'Prioridad')] ?? null, sections[SECTION[secName] ?? secName] ?? null, day(p.properties['Fecha límite']?.date?.start ?? p.properties.Fecha?.date?.start), p.properties.Coste?.number ?? null, summary];
     const key = nid(p.id);
     const ex = (await q('select id from tasks where notion_id = $1', [key])).rows[0];
-    if (ex) { await q('update tasks set title=$1, status=$2, priority=$3, section_id=$4, due_on=$5, cost=$6, summary=$7 where id=$8', [...v, ex.id]); taskIdOf[p.id] = ex.id; tkUpd++; }
+    if (ex) { await q('update tasks set title=$1, status=$2, priority=$3, section_id=$4, due_on=$5, cost=$6, summary=$7 where id=$8', [...v, ex.id]); taskIdOf[p.id] = ex.id; tkUpd++; if (!t.parentId) seen.set(dupKey, ex.id); }
     else {
       const r = await q(`insert into tasks (event_id, parent_id, position, title, status, priority, section_id, due_on, cost, summary, notion_id, done_at)
         select $1, $2, coalesce(max(position), 0) + 1, $3,$4,$5,$6,$7,$8,$9,$10, case when $4 = 'finalizada' then now() end from tasks where event_id = $1 returning id`, [eid, parent, ...v, key]);
-      taskIdOf[p.id] = r.rows[0].id; tkNew++;
+      taskIdOf[p.id] = r.rows[0].id; tkNew++; if (!t.parentId) seen.set(dupKey, r.rows[0].id);
     }
   }
 }
-if (!DRY) console.log(`\nAcciones: ${evNew} nuevas, ${evUpd} actualizadas · Tareas: ${tkNew} nuevas, ${tkUpd} actualizadas, ${tkSkip} omitidas (vacías)`);
+if (!DRY) console.log(`\nAcciones: ${evNew} nuevas, ${evUpd} actualizadas · Tareas: ${tkNew} nuevas, ${tkUpd} actualizadas, ${tkSkip} omitidas (vacías), ${tkDup} repetidas unidas`);
 await closeDb();
