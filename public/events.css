@@ -280,3 +280,9 @@ input.title:hover { border-color: var(--line); }
 .task .tmeta input[type=number] { width: 70px; }
 .task .tmeta .stsel { padding-right: 18px; }
 .task .more { white-space: nowrap; font-size: 12px; min-height: 26px; padding: 2px 10px; }
+
+/* Colores de las secciones de tareas */
+.tsec { --sc: #98a2b3; border-left: 3px solid var(--sc); background: color-mix(in srgb, var(--sc) 6%, transparent); border-radius: 0 10px 10px 0; padding: 2px 10px 6px 12px; margin-top: 10px; }
+.tsec > .th { color: color-mix(in srgb, var(--sc) 75%, var(--ink)); }
+.tsec .sdot { width: 9px; height: 9px; border-radius: 50%; background: var(--sc); flex: none; }
+.tsec .task { border-top-color: color-mix(in srgb, var(--sc) 18%, var(--line)); }

@@ -92,7 +92,7 @@ app.get('/api/meta', ...staff, wrap(async (req, res) => {
   const [clients, types, sections, users, locations] = await Promise.all([
     q('select id, name, code, color, position, archived from clients order by position, name'),
     q('select id, name, color, position from event_types order by position, name'),
-    q('select id, name, position from task_sections order by position, name'),
+    q('select id, name, color, position from task_sections order by position, name'),
     q('select id, name, email, role, active from team_users order by coalesce(nullif(name, \'\'), email)'),
     q('select id, name from locations order by position, name'),
   ]);
@@ -389,7 +389,7 @@ app.delete('/api/admin/locations/:id', ...admins, wrap(async (req, res) => {   /
   res.json({ ok: true });
 }));
 
-for (const [route, table, hasColor] of [['types', 'event_types', true], ['sections', 'task_sections', false]]) {
+for (const [route, table, hasColor] of [['types', 'event_types', true], ['sections', 'task_sections', true]]) {
   app.post(`/api/admin/${route}`, ...admins, wrap(async (req, res) => {
     const name = String(req.body.name || '').trim().slice(0, 60);
     if (!name) throw fail(400, 'Pon el nombre');

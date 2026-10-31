@@ -1,6 +1,6 @@
 // Ficha de una acción: datos, tareas por sección, briefing, cierre post-evento, enlaces y actividad. Todo se guarda solo.
 import { el, api, icon, field, select, toast, openModal, confirmBox, initials, fmtDate, fmtMoney, fmtDateLong, debounce, STATUS_COLOR, TASK_COLOR, statusBadge, today, firstName } from './ui.js';
-import { state, bus, clientOf, typeOf, userOf, loadEvents } from './state.js';
+import { state, bus, clientOf, typeOf, userOf, sectionOf, loadEvents } from './state.js';
 
 // ───────── Nueva acción ─────────
 export function newEventModal(d = {}) {
@@ -108,8 +108,8 @@ export async function eventView(id) {
     tasksBox.replaceChildren(...[...groups.map((g) => {
       const key = g.sid || 'none'; const open = !closed.has(key);
       const done = g.list.filter((t) => t.status === 'finalizada').length;
-      return el('div', { class: `tsec${open ? ' open' : ''}` },
-        el('button', { class: 'th', type: 'button', 'aria-expanded': String(open), onclick: () => { if (open) closed.add(key); else closed.delete(key); drawTasks(); } }, icon('chev', 'chev'), sectionName(g.sid), el('small', { class: 'muted', style: { textTransform: 'none', fontWeight: 400 } }, `${done}/${g.list.length}`)),
+      return el('div', { class: `tsec${open ? ' open' : ''}`, style: { '--sc': sectionOf(g.sid)?.color || '#98a2b3' } },
+        el('button', { class: 'th', type: 'button', 'aria-expanded': String(open), onclick: () => { if (open) closed.add(key); else closed.delete(key); drawTasks(); } }, icon('chev', 'chev'), el('i', { class: 'sdot' }), sectionName(g.sid), el('small', { class: 'muted', style: { textTransform: 'none', fontWeight: 400 } }, `${done}/${g.list.length}`)),
         open ? g.list.flatMap((t) => [taskRow(t), ...live().filter((c) => c.parent_id === t.id).map((c) => taskRow(c, true))]) : null);
     }), groups.length ? null : el('p', { class: 'muted' }, 'Todavía no hay tareas. Añade la primera abajo.')].filter(Boolean));
     const total = live().length, done = live().filter((t) => t.status === 'finalizada').length;

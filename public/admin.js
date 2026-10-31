@@ -87,7 +87,7 @@ function listEditor(title, hint, route, items, hasColor, rerender) {
 async function listsTab(box, rerender) {
   box.append(el('div', { class: 'two' },
     listEditor('Tipos de acción', 'Sirven para clasificar las acciones (fecha comercial, evento especial…).', 'types', state.meta.types, true, rerender),
-    listEditor('Secciones de tareas', 'Agrupan las tareas dentro de cada acción (montaje, creatividades, personal…).', 'sections', state.meta.sections, false, rerender)));
+    listEditor('Secciones de tareas', 'Agrupan las tareas dentro de cada acción (montaje, creatividades, personal…).', 'sections', state.meta.sections, true, rerender)));
 }
 
 function locationModal(l, rerender) {
