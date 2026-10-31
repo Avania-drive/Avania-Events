@@ -8,7 +8,7 @@ import { hashPassword, verifyPassword, randomToken, sha256 } from './crypto.js';
 import { COOKIE, parseCookies, createSession, clearCookie, loadSession, requireUser, requireReady, requireRole, publicUser, isAdmin, tooMany } from './auth.js';
 import { auditMiddleware } from './audit.js';
 import { downloadFile, driveEnabled, ensureFolder, uploadFile, listChildren, copyFile, shareWith, folderUrl, ACTION_SUBFOLDERS } from './drive.js';
-import { sendMail, mailEnabled } from './mailer.js';
+import { sendMail, mailEnabled, PUBLIC_URL } from './mailer.js';
 import { analyzeResults, isResultsFile } from './results.js';
 import { EVENT_STATUS, TASK_STATUS, PRIORITIES, cleanEvent, cleanTask, cleanLinks, isUuid, yearFor } from './domain.js';
 import { sendInvite } from './invite.js';
@@ -35,6 +35,34 @@ app.use((req, res, next) => {
 });
 app.use(loadSession);
 app.use(auditMiddleware(ip));
+
+// ───────── Bloqueo: una acción terminada sin valoración solo admite el cierre (valoración y resultados) ─────────
+// El superusuario edita siempre; el resto necesita un permiso suyo (action_unlocks) que dura unas horas.
+const CLOSE_FIELDS = new Set(['participants', 'kpi_result', 'sponsors', 'incidents', 'improvements', 'rating', 'notes_next', 'links']);
+async function lockState(eventId, user) {
+  const e = (await q('select id, ref, name, status, rating, archived from events where id = $1', [eventId])).rows[0];
+  if (!e) return null;
+  const needsRating = e.status === 'terminado' && e.rating == null && !e.archived;
+  const auth = (await q("select valid_until from action_unlocks where event_id = $1 and status = 'autorizada' and valid_until > now() order by valid_until desc limit 1", [eventId])).rows[0];
+  const last = (await q("select u.status, u.requested_at, u.reason, u.valid_until, coalesce(nullif(p.name, ''), p.email) who from action_unlocks u left join team_users p on p.id = u.requested_by where u.event_id = $1 order by u.requested_at desc limit 1", [eventId])).rows[0];
+  return { event: e, needs_rating: needsRating, locked: needsRating && !auth && user.role !== 'super_admin', authorized_until: auth?.valid_until || null, request: last || null };
+}
+const LOCKED_MSG = 'Esta acción está terminada y sin valoración, así que está bloqueada. Pon la valoración o pide permiso al superusuario.';
+app.use(async (req, res, next) => {
+  try {
+    if (req.method === 'GET' || !req.user || !req.path.startsWith('/api/')) return next();
+    const U = '([0-9a-f-]{36})';
+    let m, eventId = null, closeOnly = false;
+    if ((m = req.path.match(new RegExp(`^/api/events/${U}$`))) && ['PATCH', 'DELETE'].includes(req.method)) { eventId = m[1]; closeOnly = req.method === 'PATCH' && Object.keys(req.body || {}).every((k) => CLOSE_FIELDS.has(k)); }
+    else if ((m = req.path.match(new RegExp(`^/api/events/${U}/(tasks|photos|produccion)$`))) && req.method === 'POST') eventId = m[1];
+    else if ((m = req.path.match(new RegExp(`^/api/tasks/${U}(/files)?$`)))) eventId = (await q('select event_id from tasks where id = $1', [m[1]])).rows[0]?.event_id;
+    else if ((m = req.path.match(new RegExp(`^/api/task-files/${U}$`))) && req.method === 'DELETE') eventId = (await q('select event_id from task_files where id = $1', [m[1]])).rows[0]?.event_id;
+    if (!eventId || closeOnly) return next();
+    const st = await lockState(eventId, req.user);
+    if (st?.locked) return res.status(423).json({ error: LOCKED_MSG, code: 'event_locked' });
+    next();
+  } catch (e) { next(e); }
+});
 
 // Los importes solo se ven con la sesión desbloqueada (usuario y contraseña en Informes, 30 min): fuera de ahí se vacían en las respuestas y no se aceptan cambios de importes.
 const costsOpen = (req) => Boolean(req.session?.reports_until && new Date(req.session.reports_until) > new Date());
@@ -118,7 +146,9 @@ app.get('/api/meta', ...staff, wrap(async (req, res) => {
     q('select id, name, email, role, active from team_users order by coalesce(nullif(name, \'\'), email)'),
     q('select id, name from locations order by position, name'),
   ]);
+  const pendingPermissions = req.user.role === 'super_admin' ? (await q("select count(*)::int n from action_unlocks where status = 'pendiente'")).rows[0].n : 0;
   res.json({
+    pending_permissions: pendingPermissions,
     me: publicUser(req.user), eventStatus: EVENT_STATUS, taskStatus: TASK_STATUS, priorities: PRIORITIES, locations: locations.rows.map((l) => l.name),
     clients: clients.rows, types: types.rows, sections: sections.rows,
     users: users.rows.filter((u) => u.active).map(({ active, ...u }) => u),
@@ -205,7 +235,8 @@ app.get('/api/events/:id', ...staff, wrap(async (req, res) => {
   const sends = (await q("select file_ids, to_char(created_at at time zone 'Europe/Madrid', 'YYYY-MM-DD') sent_day, provider_name from production_sends where event_id = $1 order by created_at desc", [e.id])).rows;
   const sentInfo = (t) => { const mine = new Set(files.filter((f) => f.task_id === t.id).map((f) => f.drive_file_id)); const hit = sends.find((x) => (x.file_ids || []).some((id) => mine.has(id))); return hit ? { date: hit.sent_day, provider: hit.provider_name } : null; };
   const withFiles = tasks.rows.map((t) => ({ ...t, sent_to_production: sentInfo(t), files: files.filter((f) => f.task_id === t.id).map((f) => ({ id: f.id, name: f.name, folder: f.folder, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view` })) }));
-  res.json({ event: { ...e, collaborators: collabs.rows.map((r) => r.user_id), drive_url: e.drive_folder_id ? `https://drive.google.com/drive/folders/${e.drive_folder_id}` : null }, tasks: withFiles, photos, event_docs: files.filter((f) => !f.task_id && f.folder !== 'Fotografías').map((f) => ({ id: f.id, name: f.name, folder: f.folder, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view` })), drive_enabled: driveEnabled() });
+  const lock = await lockState(e.id, req.user);
+  res.json({ lock: { locked: lock.locked, needs_rating: lock.needs_rating, authorized_until: lock.authorized_until, request: lock.request }, event: { ...e, collaborators: collabs.rows.map((r) => r.user_id), drive_url: e.drive_folder_id ? `https://drive.google.com/drive/folders/${e.drive_folder_id}` : null }, tasks: withFiles, photos, event_docs: files.filter((f) => !f.task_id && f.folder !== 'Fotografías').map((f) => ({ id: f.id, name: f.name, folder: f.folder, size: f.size, url: `https://drive.google.com/file/d/${f.drive_file_id}/view` })), drive_enabled: driveEnabled() });
 }));
 
 // ───────── Aviso diario de pendientes y tareas tipo para clonar ─────────
@@ -290,6 +321,7 @@ app.patch('/api/events/:id', ...staff, wrap(async (req, res) => {
     const watched = ['status', 'owner_id', 'starts_on', 'ends_on', 'cost', 'invoiced', 'name', 'archived'];
     const diff = Object.fromEntries(watched.filter((k) => k in d && String(d[k] ?? '') !== String(cur[k] ?? '')).map((k) => [k, { de: cur[k] ?? null, a: d[k] ?? null }]));
     if (Object.keys(diff).length) await logEvent(cur.id, req.user, 'cambiar', diff);
+    if (d.status === 'terminado' && cur.status !== 'terminado') notifyCompleted(cur.id, req.user).catch((err) => console.error('[resumen de costes]', err.message));   // sin esperar al correo
   }
   if (Array.isArray(req.body.collaborators)) await setCollaborators(cur.id, req.body.collaborators);
   res.json({ event: await loadEvent(cur.id) });
@@ -377,6 +409,61 @@ app.delete('/api/task-files/:id', ...staff, wrap(async (req, res) => {   // solo
   await logEvent(r.rows[0].event_id, req.user, 'archivo quitado', { name: r.rows[0].name });
   res.json({ ok: true });
 }));
+
+// ───────── Permisos para editar acciones bloqueadas ─────────
+const superEmails = async () => (await q("select email from team_users where role = 'super_admin' and active")).rows.map((r) => r.email);
+const euro = (n) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', useGrouping: 'always', maximumFractionDigits: Number(n) % 1 ? 2 : 0 }).format(Number(n) || 0);
+app.post('/api/events/:id/permiso', ...staff, wrap(async (req, res) => {
+  const e = await loadEvent(req.params.id);
+  const st = await lockState(e.id, req.user);
+  if (!st.needs_rating) throw fail(400, 'Esta acción no está bloqueada');
+  if (st.authorized_until) throw fail(400, 'Ya hay un permiso en vigor para esta acción');
+  const pending = (await q("select id from action_unlocks where event_id = $1 and status = 'pendiente'", [e.id])).rows[0];
+  if (pending) return res.json({ ok: true, already: true });
+  const reason = String(req.body.reason || '').trim().slice(0, 500);
+  await q('insert into action_unlocks (event_id, requested_by, reason) values ($1,$2,$3)', [e.id, req.user.id, reason]);
+  const who = req.user.name || req.user.email;
+  if (mailEnabled()) for (const to of await superEmails()) sendMail({ to, subject: `Permiso pedido · ${e.ref} ${e.name}`, title: 'Piden permiso para editar una acción bloqueada', paragraphs: [`${who} quiere editar «${e.name}» (${e.ref}), que está terminada y sin valoración.`, reason ? `Motivo: ${reason}` : 'No ha indicado motivo.', 'Puedes autorizarlo o rechazarlo en Administración, Permisos.'], button: { label: 'Ver permisos', url: `${PUBLIC_URL}/#/admin/permisos` } }).catch((err) => console.error('[permiso]', err.message));
+  res.json({ ok: true });
+}));
+app.get('/api/permisos', ...staff, requireRole('super_admin'), wrap(async (_req, res) => {
+  const rows = (await q(`select u.id, u.status, u.reason, u.requested_at, u.decided_at, u.valid_until, e.id event_id, e.ref, e.name event_name,
+      coalesce(nullif(r.name, ''), r.email) requester, coalesce(nullif(d.name, ''), d.email) decider
+    from action_unlocks u join events e on e.id = u.event_id left join team_users r on r.id = u.requested_by left join team_users d on d.id = u.decided_by
+    order by (u.status = 'pendiente') desc, u.requested_at desc limit 80`)).rows;
+  res.json({ pending: rows.filter((r) => r.status === 'pendiente'), history: rows.filter((r) => r.status !== 'pendiente') });
+}));
+app.post('/api/permisos/:id/decidir', ...staff, requireRole('super_admin'), wrap(async (req, res) => {
+  if (!isUuid(req.params.id)) throw fail(404, 'No existe esa petición');
+  const cur = (await q("select u.*, e.ref, e.name event_name, r.email requester_email from action_unlocks u join events e on e.id = u.event_id left join team_users r on r.id = u.requested_by where u.id = $1", [req.params.id])).rows[0];
+  if (!cur) throw fail(404, 'No existe esa petición');
+  if (cur.status !== 'pendiente') throw fail(409, 'Esa petición ya está resuelta');
+  const accept = req.body.accept === true, hours = Math.min(Math.max(Math.round(Number(req.body.hours) || 48), 1), 24 * 14);
+  await q(`update action_unlocks set status = $1, decided_by = $2, decided_at = now(), valid_until = ${accept ? `now() + interval '${hours} hours'` : 'null'} where id = $3`, [accept ? 'autorizada' : 'rechazada', req.user.id, cur.id]);
+  if (mailEnabled() && cur.requester_email) sendMail({ to: cur.requester_email, subject: `${accept ? 'Permiso concedido' : 'Permiso rechazado'} · ${cur.ref} ${cur.event_name}`, title: accept ? 'Ya puedes editar la acción' : 'Permiso rechazado', paragraphs: [accept ? `Se te ha dado permiso para editar «${cur.event_name}» durante ${hours} horas. Lo mejor es poner la valoración para que quede desbloqueada.` : `No se ha autorizado editar «${cur.event_name}». Pon la valoración de la acción para desbloquearla.`], button: { label: 'Abrir la acción', url: `${PUBLIC_URL}/#/evento/${cur.event_id}` } }).catch((err) => console.error('[permiso]', err.message));
+  res.json({ ok: true });
+}));
+
+/** Cuando una acción se termina: correo al superusuario con el resumen de costes para pasar a facturación (una sola vez por acción). */
+async function notifyCompleted(eventId, actor) {
+  if (!mailEnabled()) return;
+  const e = (await q('select e.*, c.name client from events e join clients c on c.id = e.client_id where e.id = $1', [eventId])).rows[0];
+  if (!e || e.completed_notified_at) return;
+  const tasks = (await q(`select t.title, t.cost, coalesce(s.name, 'Sin sección') section from tasks t left join task_sections s on s.id = t.section_id where t.event_id = $1 and t.status <> 'archivada' and t.cost is not null and t.cost > 0 order by s.position nulls last, t.position`, [eventId])).rows;
+  const bySection = new Map();
+  for (const t of tasks) bySection.set(t.section, (bySection.get(t.section) || 0) + Number(t.cost));
+  const total = tasks.reduce((n, t) => n + Number(t.cost), 0);
+  const dates = e.starts_on ? `${e.starts_on}${e.ends_on && e.ends_on !== e.starts_on ? ` a ${e.ends_on}` : ''}` : 'sin fecha';
+  const lines = [`${e.ref} · ${e.name} (${e.client}). Fechas: ${dates}. Terminada${actor ? ` por ${actor.name || actor.email}` : ''}.`,
+    `Coste anotado en la acción: ${e.cost != null ? euro(e.cost) : 'sin indicar'}. Suma de las tareas con coste: ${euro(total)}. Estado de facturación: ${e.invoiced ? 'ya facturada' : 'pendiente de facturar'}.`];
+  if (bySection.size) lines.push(`Por sección: ${[...bySection.entries()].map(([k, v]) => `${k} ${euro(v)}`).join(' · ')}.`);
+  if (tasks.length) lines.push(`Detalle (${tasks.length} tareas con coste): ${tasks.slice(0, 40).map((t) => `${t.title.trim()} ${euro(t.cost)}`).join(' · ')}${tasks.length > 40 ? ' …' : ''}.`);
+  else lines.push('Ninguna tarea tiene coste anotado.');
+  if (!e.rating) lines.push('Falta la valoración: la acción queda bloqueada hasta que se ponga.');
+  let sent = 0;
+  for (const to of await superEmails()) { await sendMail({ to, subject: `Para facturar · ${e.ref} ${e.name}`, title: 'Acción terminada: resumen de costes', paragraphs: lines, button: { label: 'Abrir la acción', url: `${PUBLIC_URL}/#/evento/${e.id}` } }); sent++; }
+  if (sent) await q('update events set completed_notified_at = now() where id = $1', [e.id]);
+}
 
 // Clonar una acción a otro año: misma ficha y tareas (sin hacer, sin importes ni resultados), con las fechas movidas al año elegido.
 const shiftYear = (d, from, to) => { if (!d) return null; const [y, m, day] = String(d).split('-').map(Number); const t = new Date(Date.UTC(y + (to - from), m - 1, day)); return t.getUTCMonth() !== m - 1 ? new Date(Date.UTC(y + (to - from), m, 0)).toISOString().slice(0, 10) : t.toISOString().slice(0, 10); };
@@ -722,3 +809,4 @@ if (process.env.EVENTS_NO_LISTEN !== '1') {
   const port = Number(process.env.PORT || 3004);
   app.listen(port, '127.0.0.1', () => console.log(`Avania Events en 127.0.0.1:${port}`));
 }
+export { notifyCompleted };

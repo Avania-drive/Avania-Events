@@ -98,7 +98,7 @@ ok('busca por referencia', (await ana.call('GET', '/api/events?search=ALB-001'))
 ok('filtro con id raro → 400', (await ana.call('GET', '/api/events?type=zzz')).s === 400);
 
 console.log('Panel de inicio');
-await ana.call('PATCH', `/api/events/${ev2.id}`, { status: 'terminado' });
+await ana.call('PATCH', `/api/events/${ev2.id}`, { status: 'terminado', rating: 4 });
 await ana.call('PATCH', `/api/events/${ev2.id}`, { invoiced: false });
 await ana.call('PATCH', `/api/tasks/${t2.id}`, { due_on: '2020-01-01', owner_id: anaId });
 r = (await ana.call('GET', '/api/dashboard')).j;
@@ -278,6 +278,35 @@ console.log('Análisis de resultados (Excel)');
   ok('recoge incidencias y comentarios', r.incidents.length === 1 && r.comments.length === 1);
   ok('el resumen no trae importes', !/500|800|cash/i.test(r.summary) && /participaciones 40/.test(r.summary));
   ok('reconoce el nombre del archivo', isResultsFile('JOVENTURA - Datos, Comentarios G. e Incidencias DÍA DE LA MADRE 2026.xlsx') && !isResultsFile('presupuesto.pdf'));
+}
+
+console.log('Bloqueo por falta de valoración y permisos');
+{
+  const meta4 = (await ana.call('GET', '/api/meta')).j;
+  const evb = (await ana.call('POST', '/api/events', { name: 'Para bloquear', client_id: meta4.clients[0].id, clone_tasks: [{ title: 'Una tarea', section_id: meta4.sections[0].id }] })).j.event;
+  ok('en proceso se edita con normalidad', (await ana.call('PATCH', `/api/events/${evb.id}`, { name: 'Para bloquear 2' })).s === 200);
+  await ana.call('PATCH', `/api/events/${evb.id}`, { status: 'terminado' });
+  const d1 = (await ana.call('GET', `/api/events/${evb.id}`)).j;
+  ok('terminada y sin valoración queda bloqueada', d1.lock.locked === true && d1.lock.needs_rating === true);
+  ok('bloqueada: no deja cambiar el nombre', (await ana.call('PATCH', `/api/events/${evb.id}`, { name: 'Otro' })).s === 423);
+  ok('bloqueada: no deja tocar tareas ni crear otras', (await ana.call('PATCH', `/api/tasks/${d1.tasks[0].id}`, { title: 'x' })).s === 423 && (await ana.call('POST', `/api/events/${evb.id}/tasks`, { title: 'nueva' })).s === 423);
+  ok('bloqueada: no se puede archivar', (await ana.call('DELETE', `/api/events/${evb.id}`)).s === 423);
+  ok('bloqueada: el cierre sí se puede rellenar', (await ana.call('PATCH', `/api/events/${evb.id}`, { participants: 120, kpi_result: 'ok' })).s === 200);
+  ok('el superusuario edita siempre', (await sup.call('PATCH', `/api/events/${evb.id}`, { description: 'desde super' })).s === 200);
+  ok('pedir permiso', (await ana.call('POST', `/api/events/${evb.id}/permiso`, { reason: 'corregir una fecha' })).j.ok === true);
+  ok('pedirlo dos veces no duplica', (await ana.call('POST', `/api/events/${evb.id}/permiso`, {})).j.already === true);
+  ok('un miembro no ve ni decide permisos', (await ana.call('GET', '/api/permisos')).s === 403);
+  const pend = (await sup.call('GET', '/api/permisos')).j.pending.find((x) => x.event_id === evb.id);
+  ok('el superusuario ve la petición', Boolean(pend) && (await sup.call('GET', '/api/meta')).j.pending_permissions >= 1);
+  ok('rechazar la deja bloqueada', (await sup.call('POST', `/api/permisos/${pend.id}/decidir`, { accept: false })).j.ok === true && (await ana.call('PATCH', `/api/events/${evb.id}`, { name: 'Otro' })).s === 423);
+  await ana.call('POST', `/api/events/${evb.id}/permiso`, {});
+  const pend2 = (await sup.call('GET', '/api/permisos')).j.pending.find((x) => x.event_id === evb.id);
+  await sup.call('POST', `/api/permisos/${pend2.id}/decidir`, { accept: true, hours: 2 });
+  ok('con permiso autorizado se puede editar', (await ana.call('PATCH', `/api/events/${evb.id}`, { name: 'Editada con permiso' })).s === 200 && (await ana.call('GET', `/api/events/${evb.id}`)).j.lock.authorized_until);
+  await ana.call('PATCH', `/api/events/${evb.id}`, { rating: 5 });
+  const d2 = (await ana.call('GET', `/api/events/${evb.id}`)).j;
+  ok('con valoración deja de estar bloqueada', d2.lock.needs_rating === false);
+  await admin.call('DELETE', `/api/events/${evb.id}?hard=1`);
 }
 
 console.log('Salud');

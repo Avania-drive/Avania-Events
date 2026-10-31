@@ -106,6 +106,27 @@ async function productionModal(e) {
   pm.box.classList.add('prod-modal');
 }
 
+// Aviso de bloqueo: terminada y sin valoración → solo se rellena el cierre; para lo demás hay que pedir permiso al superusuario
+function permissionModal(e) {
+  const reason = el('textarea', { rows: 3, maxlength: 500, placeholder: 'Qué necesitas cambiar y por qué (opcional)' });
+  const err = el('div', { class: 'err', role: 'alert' });
+  openModal({ title: 'Pedir permiso para editar', body: el('div', { class: 'fields' }, el('p', { class: 'muted wide' }, `«${e.name}» está terminada y sin valoración. El superusuario recibirá tu petición por correo y en Administración.`), el('div', { class: 'field wide' }, el('label', {}, 'Motivo'), reason), el('div', { class: 'field wide' }, err)),
+    actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Pedir permiso', keep: true, run: async (_e, close) => {
+      try { await api('POST', `/api/events/${e.id}/permiso`, { reason: reason.value }); close(); toast('Permiso pedido'); window.dispatchEvent(new HashChangeEvent('hashchange')); }
+      catch (er) { err.textContent = er.message; return false; }
+    } }] });
+}
+function lockBanner(e, lock, isSuper) {
+  const when = (iso) => new Date(iso).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  if (lock.authorized_until && lock.needs_rating) return el('div', { class: 'lockbar ok', role: 'status' }, el('b', {}, 'Permiso concedido'), ` hasta el ${when(lock.authorized_until)}. Pon la valoración en «Cierre del evento» para dejar la acción desbloqueada.`);
+  if (!lock.needs_rating) return null;
+  if (isSuper) return el('div', { class: 'lockbar info', role: 'status' }, el('b', {}, 'Terminada sin valoración.'), ' Para el resto del equipo está bloqueada; tú puedes editarla. Pon la valoración en «Cierre del evento» para desbloquearla.');
+  const r = lock.request;
+  return el('div', { class: 'lockbar', role: 'alert' }, el('div', {}, el('b', {}, 'Acción bloqueada.'), ' Está terminada y sin valoración: solo puedes rellenar el cierre del evento (valoración, resultados…). Para cambiar lo demás hace falta el permiso del superusuario.',
+      r?.status === 'pendiente' ? el('div', { class: 'muted' }, `Permiso pedido por ${r.who} el ${when(r.requested_at)}: esperando respuesta.`) : r?.status === 'rechazada' ? el('div', { class: 'muted' }, 'La última petición de permiso se rechazó.') : null),
+    r?.status === 'pendiente' ? null : el('button', { class: 'btn small', type: 'button', onclick: () => permissionModal(e) }, 'Pedir permiso'));
+}
+
 // Clonar una acción a otro año (copia la ficha y las tareas, todas sin hacer y sin importes)
 function cloneModal(e) {
   const thisYear = new Date().getFullYear();
@@ -138,6 +159,7 @@ export async function eventView(id, openTaskId = null) {
   const data = await api('GET', `/api/events/${id}`);
   let e = data.event, tasks = data.tasks;
   const unlocked = Boolean(data.costs_unlocked);
+  const lock = data.lock || { locked: false, needs_rating: false };
   let photos = data.photos || [];
   let log = (await api('GET', `/api/events/${id}/log`)).log;
   const client = clientOf(e.client_id);
@@ -363,6 +385,7 @@ export async function eventView(id, openTaskId = null) {
         el('button', { class: 'btn ghost small', type: 'button', onclick: async () => { if (!(await confirmBox('Archivar acción', `¿Archivar «${e.name}»? Dejará de salir en las listas (un administrador puede borrarla del todo).`, 'Archivar'))) return; await api('DELETE', `/api/events/${id}`); await loadEvents(); toast('Acción archivada'); location.hash = `#/anio/${e.year}`; } }, 'Archivar'),
         state.me.is_admin ? el('button', { class: 'btn danger small', type: 'button', onclick: async () => { if (!(await confirmBox('Borrar para siempre', `¿Borrar «${e.name}» con todas sus tareas? No se puede deshacer.`, 'Borrar para siempre', true))) return; await api('DELETE', `/api/events/${id}?hard=1`); await loadEvents(); toast('Acción borrada'); location.hash = `#/anio/${e.year}`; } }, 'Borrar') : null)),
       title),
+    lockBanner(e, lock, state.me.role === 'super_admin'),
     el('div', { class: 'evt' },
       el('div', {},
         el('section', { class: 'card sec' }, el('h3', {}, 'Datos'), el('div', { class: 'fields' },
@@ -389,6 +412,10 @@ export async function eventView(id, openTaskId = null) {
       el('aside', { class: 'side' },
         el('section', { class: 'card sec' }, el('h3', {}, 'Resumen'), summaryBox, e.notion_url ? el('p', {}, el('a', { href: e.notion_url, target: '_blank', rel: 'noopener', class: 'muted' }, 'Ver la ficha original en Notion')) : null),
         el('section', { class: 'card sec' }, el('h3', {}, 'Actividad'), logBox))));
+  if (lock.locked) {   // bloqueada: solo quedan activos el cierre, la documentación y los enlaces
+    page.querySelectorAll('.evt > div > section.card').forEach((sec) => { if (!/Cierre|Documentación|Enlaces/.test(sec.querySelector('h3')?.textContent || '')) sec.setAttribute('inert', ''); });
+    page.querySelectorAll('.evt-h .stsel, .evt-h select, .evt-h input.title').forEach((x) => x.setAttribute('inert', ''));
+  }
   drawTasks(); refreshLog();
   if (openTaskId) setTimeout(() => { const t = tasks.find((x) => x.id === openTaskId); if (t) taskModal(t); }, 50);   // enlace desde el aviso de pendientes
   return page;

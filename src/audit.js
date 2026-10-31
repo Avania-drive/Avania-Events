@@ -32,6 +32,8 @@ async function describe(req, status) {
     return { action: 'Modificó una tarea', category: 'tareas', event_id: t?.event_id, summary: `Modificó la tarea ${where} (${fields(b)})${b.status && b.status !== 'finalizada' ? `: ahora «${b.status}»` : ''}` };
   }
   if (m === 'POST' && /^\/api\/tasks\/[^/]+\/files$/.test(p)) { const t = (await q('select title, event_id from tasks where id = $1', [id])).rows[0]; return { action: 'Subió un archivo', category: 'archivos', event_id: t?.event_id, summary: `Subió «${decodeURIComponent(String(req.query.name || 'archivo'))}» a la tarea «${t?.title || ''}»` }; }
+  if (m === 'POST' && /\/permiso$/.test(p)) return { action: 'Pidió permiso', category: 'acciones', event_id: id, summary: `Pidió permiso para editar ${await evLabel(id)} (bloqueada sin valoración)` };
+  if (m === 'POST' && /^\/api\/permisos\/.+\/decidir$/.test(p)) return { action: b.accept === true ? 'Autorizó un permiso' : 'Rechazó un permiso', category: 'administración', summary: `${b.accept === true ? 'Autorizó' : 'Rechazó'} una petición de permiso para editar una acción` };
   if (m === 'POST' && /\/produccion$/.test(p)) return { action: 'Envió a producción', category: 'acciones', event_id: id, summary: `Envió a producción piezas de ${await evLabel(id)} (${(Array.isArray(b.file_ids) ? b.file_ids.length : 0)} piezas)` };
   if (m === 'POST' && /\/photos$/.test(p)) return { action: 'Subió una fotografía', category: 'archivos', event_id: id, summary: `Subió «${decodeURIComponent(String(req.query.name || 'foto'))}» a las fotografías de ${await evLabel(id)}` };
   if (m === 'DELETE' && /^\/api\/task-files\//.test(p)) return { action: 'Quitó un archivo', category: 'archivos', summary: 'Quitó un archivo de una tarea o de las fotografías' };

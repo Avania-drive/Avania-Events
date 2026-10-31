@@ -142,6 +142,19 @@ async function providersTab(box, rerender) {
       : el('div', { class: 'card empty-big' }, 'Todavía no hay proveedores.'));
 }
 
+async function permissionsTab(box, rerender) {
+  const { pending, history } = await api('GET', '/api/permisos');
+  const when = (iso) => new Date(iso).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const decide = async (id, accept, hours) => { try { await api('POST', `/api/permisos/${id}/decidir`, { accept, hours }); await loadMeta(); bus.dispatchEvent(new Event('refresh')); toast(accept ? 'Permiso concedido' : 'Permiso rechazado'); } catch (e) { toast(e.message, true); } };
+  box.append(el('p', { class: 'muted' }, 'Las acciones terminadas sin valoración están bloqueadas para el equipo. Aquí llegan las peticiones de permiso para editarlas.'),
+    pending.length ? el('div', { class: 'card adm-list' }, pending.map((r) => { const hrs = select([['4', '4 horas'], ['24', '24 horas'], ['48', '48 horas'], ['168', '7 días']], '48', { 'aria-label': 'Duración del permiso' });
+      return el('div', { class: 'adm-row' }, el('div', { class: 'who' }, el('b', {}, el('a', { href: `#/evento/${r.event_id}` }, `${r.ref} · ${r.event_name}`)), el('small', { class: 'muted' }, `${r.requester} · ${when(r.requested_at)}`), r.reason ? el('small', {}, `«${r.reason}»`) : null),
+        el('div', { class: 'actions' }, hrs, el('button', { class: 'btn small', type: 'button', onclick: () => decide(r.id, true, Number(hrs.value)) }, 'Autorizar'), el('button', { class: 'btn ghost small', type: 'button', onclick: () => decide(r.id, false) }, 'Rechazar'))); }))
+      : el('div', { class: 'card empty-big' }, 'No hay peticiones pendientes.'),
+    history.length ? el('h3', { class: 'rep-h' }, 'Historial') : null,
+    history.length ? el('div', { class: 'card adm-list' }, history.map((r) => el('div', { class: 'adm-row' }, el('div', { class: 'who' }, el('b', {}, `${r.ref} · ${r.event_name}`), el('small', { class: 'muted' }, `${r.requester} · ${when(r.requested_at)}${r.decider ? ` · ${r.status} por ${r.decider}` : ''}`)), el('span', { class: `role${r.status === 'autorizada' ? '' : ' off'}` }, r.status)))) : null);
+}
+
 const CAT = { accesos: 'Accesos', acciones: 'Acciones', tareas: 'Tareas', archivos: 'Archivos', administración: 'Administración' };
 const CAT_COLOR = { accesos: '#667085', acciones: '#2563eb', tareas: '#16a34a', archivos: '#ea7a1a', administración: '#7c3aed' };
 const when = (iso) => { const d = new Date(iso); return `${d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · ${d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`; };
@@ -180,7 +193,7 @@ async function activityTab(box) {
 }
 
 export async function adminView(tab = 'equipo') {
-  const TABS = { equipo: ['Equipo', teamTab], clientes: ['Clientes', clientsTab], tipos: ['Tipos y secciones', listsTab], ubicaciones: ['Ubicaciones', locationsTab], proveedores: ['Proveedores', providersTab], actividad: ['Actividad', activityTab] };
+  const TABS = { equipo: ['Equipo', teamTab], clientes: ['Clientes', clientsTab], tipos: ['Tipos y secciones', listsTab], ubicaciones: ['Ubicaciones', locationsTab], permisos: ['Permisos', permissionsTab], proveedores: ['Proveedores', providersTab], actividad: ['Actividad', activityTab] };
   if (!TABS[tab]) tab = 'equipo';
   const body = el('div');
   const page = el('div', { class: 'page', 'data-title': 'Administración' },

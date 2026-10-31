@@ -87,7 +87,7 @@ function renderSide() {
     el('div', { class: 'av-group' }, 'Años'), ...yearBlock,
         el('div', { class: 'av-grow' }),
     el('div', { class: 'av-sep' }),
-    state.me.is_admin ? nav('#/admin/equipo', 'Administración', icon('gear'), route.name === 'admin' ? 'on' : '') : null,
+    state.me.is_admin ? nav(state.meta.pending_permissions ? '#/admin/permisos' : '#/admin/equipo', 'Administración', icon('gear'), route.name === 'admin' ? 'on' : '', state.meta.pending_permissions ? [el('small', { class: 'pend-n hot', style: { marginLeft: 'auto' } }, String(state.meta.pending_permissions))] : []) : null,
     el('button', { class: 'av-nav', type: 'button', onclick: logout }, icon('out'), el('span', {}, 'Salir')));
 }
 
