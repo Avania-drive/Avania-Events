@@ -620,3 +620,47 @@ main.auth-card .err { min-height: 18px; }
   .task .tmeta select:not(.stsel) { flex: .85 1 0; }
   .task .tmeta input[type=date] { flex: 1.25 1 0; }
 }
+
+/* Informes de producción: pestañas, gráficos de barras y circulares, tabla de pendiente de facturar */
+.rep-tabs { margin: 0 0 12px; display: inline-flex; }
+.tabs.seg a { display: inline-flex; align-items: center; padding: 5px 12px; border-radius: 8px; font-size: 13px; color: var(--muted); text-decoration: none; }
+.tabs.seg a.on { background: var(--soft); color: var(--accent); font-weight: 600; }
+.pr-act { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin: 0 0 12px; font-size: 13px; }
+.pr-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.pr-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.pr-card { margin-bottom: 12px; min-width: 0; }
+.pr-card h3 small { margin-left: 8px; font-weight: 400; }
+.pr-both { display: grid; gap: 16px; }
+.pr-bars { display: grid; gap: 7px; }
+.pr-bar { display: grid; grid-template-columns: minmax(70px, 38%) minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; }
+.pr-bar .l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-bar .bar { height: 12px; background: var(--soft); border-radius: 6px; overflow: hidden; }
+.pr-bar .bar i { display: block; height: 100%; border-radius: 6px; min-width: 2px; }
+.pr-bar .n { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.pr-pie { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.pr-donut { width: 140px; height: 140px; flex: none; }
+.pr-dtot { font-size: 14px; font-weight: 700; fill: var(--ink); }
+.pr-leg { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 12.5px; flex: 1; min-width: 160px; }
+.pr-leg li { display: flex; align-items: center; gap: 8px; }
+.pr-leg li i, .pr-key i { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
+.pr-leg .l { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-ywrap { overflow-x: auto; }
+.pr-years { height: 190px; display: block; }
+.pr-years text { font-size: 12px; fill: var(--muted); }
+.pr-years .yv { fill: var(--ink); font-weight: 600; font-size: 11px; }
+.pr-ycol { cursor: pointer; outline: none; } .pr-ycol.on .yl { fill: var(--accent); font-weight: 700; }
+.pr-ycol:hover rect:not([fill=transparent]), .pr-ycol:focus rect:not([fill=transparent]) { opacity: .8; }
+.pr-key { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12.5px; margin: 6px 0 0; }
+.pr-key small { margin-left: auto; }
+.pr-note { font-size: 12.5px; margin: 4px 0 10px; }
+.pr-tw { overflow-x: auto; }
+.pr-tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.pr-tbl th, .pr-tbl td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.pr-tbl td:first-child { white-space: normal; min-width: 200px; }
+.pr-tbl .r { text-align: right; font-variant-numeric: tabular-nums; }
+.pr-tbl tfoot td { font-weight: 700; border-bottom: 0; }
+@media (max-width: 860px) { .pr-two { grid-template-columns: minmax(0, 1fr); } .rep-tabs { display: flex; overflow-x: auto; } }
+@media print { .pr-btns, .rep-tabs, .pr-tbl button { display: none !important; } .pr-card { break-inside: avoid; } }
+.pr-both { grid-template-columns: minmax(0, 1fr); } .pr-bars, .pr-pie, .pr-bar { min-width: 0; }
+@media (max-width: 860px) { .pr-bar { grid-template-columns: minmax(60px, 34%) minmax(0, 1fr) auto; gap: 8px; } .pr-bar .n { font-size: 12.5px; } }
+.pr-leg { min-width: 0; flex: 1 1 160px; } .pr-leg li { min-width: 0; } .pr-leg .l { min-width: 0; }

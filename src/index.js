@@ -182,6 +182,48 @@ app.post('/api/informes/acceso', ...staff, wrap(async (req, res) => {
   const r = await q(`update sessions set reports_until = now() + interval '${REPORTS_MINUTES} minutes' where id = $1 returning reports_until`, [req.session.id]);
   res.json({ unlocked: true, until: r.rows[0].reports_until });
 }));
+// Informe de producción: consumos (unidades) y gastos (€) por año, sección, tipo, proveedor y concepto; pendiente de facturar.
+async function productionReport(clientId) {
+  const args = [], where = ["not e.archived", "e.status <> 'cancelado'"];
+  if (clientId) { args.push(clientId); where.push(`e.client_id = $${args.length}`); }
+  const W = where.join(' and ');
+  const rows = async (sql) => (await q(sql, args)).rows;
+  const years = await rows(`select e.year, count(*)::int actions, coalesce(sum(e.budget),0) budget, coalesce(sum(t.cost),0) spent, coalesce(sum(t.n),0)::int tasks,
+      coalesce(sum(e.budget) filter (where e.invoiced),0) billed
+    from events e left join (select event_id, sum(cost) cost, count(*) filter (where cost > 0) n from tasks where status <> 'archivada' and parent_id is null group by event_id) t on t.event_id = e.id
+    where ${W} group by e.year order by e.year`);
+  const sections = await rows(`select e.year, coalesce(s.name, 'Sin sección') label, count(*) filter (where t.cost > 0)::int n, coalesce(sum(t.cost),0) cost
+    from tasks t join events e on e.id = t.event_id left join task_sections s on s.id = t.section_id where ${W} and t.status <> 'archivada' and t.parent_id is null group by e.year, s.name`);
+  const types = await rows(`select e.year, coalesce(y.name, 'Sin tipo') label, coalesce(y.color, '#98a2b3') color, count(distinct e.id)::int actions, coalesce(sum(t.cost),0) cost, count(t.id) filter (where t.cost > 0)::int n
+    from events e left join event_types y on y.id = e.type_id left join tasks t on t.event_id = e.id and t.status <> 'archivada' and t.parent_id is null where ${W} group by e.year, y.name, y.color`);
+  const providers = await rows(`select extract(year from p.created_at at time zone 'Europe/Madrid')::int as year, coalesce(nullif(p.provider_name,''), 'Sin proveedor') label, count(*)::int n, coalesce(sum(jsonb_array_length(p.files)),0)::int files
+    from production_sends p join events e on e.id = p.event_id where ${W} group by 1, 2`);
+  const items = await rows(`select e.year, lower(trim(t.title)) key, min(trim(t.title)) label, count(*)::int n, count(distinct e.id)::int actions, coalesce(sum(t.cost),0) cost
+    from tasks t join events e on e.id = t.event_id where ${W} and t.status <> 'archivada' and t.parent_id is null and t.cost > 0 group by e.year, lower(trim(t.title))`);
+  const pending = await rows(`select e.id, e.ref, e.name, e.year, c.name client, e.budget, coalesce(t.cost,0) cost, e.ends_on
+    from events e join clients c on c.id = e.client_id left join (select event_id, sum(cost) cost from tasks where status <> 'archivada' and parent_id is null group by event_id) t on t.event_id = e.id
+    where ${W} and e.status = 'terminado' and not e.invoiced order by e.year, e.ends_on nulls last, e.seq`);
+  return { years, sections, types, providers, items, pending };
+}
+app.get('/api/informes/produccion', ...staff, requireReports, wrap(async (req, res) => {
+  if (req.query.client && !isUuid(req.query.client)) throw fail(400, 'Cliente no válido');
+  res.json(await productionReport(req.query.client || null));
+}));
+app.post('/api/informes/enviar', ...staff, requireReports, wrap(async (req, res) => {
+  const year = /^\d{4}$/.test(String(req.body.year || '')) ? String(req.body.year) : '';
+  const r = await productionReport(req.body.client && isUuid(req.body.client) ? req.body.client : null);
+  const y = r.years.find((x) => String(x.year) === year);
+  const eur = (n) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(Number(n) || 0);
+  const pend = r.pending.filter((p) => !year || String(p.year) === year);
+  const link = `${PUBLIC_URL}/#/informes?vista=produccion&anio=${year}`;
+  try {
+    await sendMail({ to: req.user.email, subject: `Informe de producción${year ? ` ${year}` : ''}`, title: `Informe de producción${year ? ` ${year}` : ''}`,
+      paragraphs: [y ? `Gastos: ${eur(y.spent)} · Facturación: ${eur(y.budget)} · Resultado: ${eur(y.budget - y.spent)}.` : 'Resumen de todos los años en el informe.',
+        `Pendiente de facturar: ${pend.length} acción${pend.length === 1 ? '' : 'es'} por ${eur(pend.reduce((n, p) => n + Number(p.budget || 0), 0))}.`,
+        'El enlace pide tu usuario y contraseña de Avania Events.'], button: { label: 'Abrir el informe', url: link } });
+  } catch (e) { throw fail(502, e.message); }
+  res.json({ ok: true, link });
+}));
 app.post('/api/informes/bloquear', ...staff, wrap(async (req, res) => { await q('update sessions set reports_until = null where id = $1', [req.session.id]); res.json({ unlocked: false }); }));
 app.get('/api/informes', ...staff, requireReports, wrap(async (req, res) => {
   const args = [], where = ['not e.archived'];

@@ -162,6 +162,7 @@ console.log('Informes con usuario y contraseña');
   ok('usuario de otra persona → 401', (await c.call('POST', '/api/informes/acceso', { email: 'admin@avania.es', password: 'una-clave-larga-123' })).s === 401);
   ok('con usuario y contraseña se abren', (await c.call('POST', '/api/informes/acceso', { email: 'ANA@avania.es', password: 'una-clave-larga-123' })).j.unlocked === true);
   ok('ya devuelve las acciones con importes', Array.isArray((await c.call('GET', '/api/informes')).j.events));
+  { const pr = await c.call('GET', '/api/informes/produccion'); ok('informe de producción con importes (años, secciones, pendiente)', pr.s === 200 && ['years', 'sections', 'types', 'providers', 'items', 'pending'].every((k) => Array.isArray(pr.j[k]))); }
   ok('otra sesión sigue cerrada', (await (await login('ana@avania.es', undefined, true)).c.call('GET', '/api/informes')).s === 403);
   await c.call('POST', '/api/informes/bloquear');
   ok('se pueden volver a bloquear', (await c.call('GET', '/api/informes')).s === 403);
@@ -317,6 +318,7 @@ console.log('Bloqueo por falta de valoración y permisos');
 
 console.log('Salud');
 ok('/api/health', (await new Client().call('GET', '/api/health')).j.ok === true);
+{ const l = await (async () => { const u = await ana.call('POST', '/api/informes/bloquear'); return (await ana.call('GET', '/api/informes/produccion')).s; })(); ok('informe de producción cerrado sin contraseña → 403', l === 403); }
 ok('una ruta rara de la API → 404', (await ana.call('GET', '/api/nada')).s === 404);
 
 server.close(); await closeDb();

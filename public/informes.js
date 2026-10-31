@@ -1,5 +1,6 @@
 // Informes: resumen global de las acciones y una ficha-resumen por cada una, filtrable por año.
 import { el, api, select, field, toast, fmtRange, fmtMoney, statusBadge, STATUS_COLOR, MONTHS_SHORT } from './ui.js';
+import { produccionView } from './produccion.js';
 import { state, visibleEvents, clientOf, typeOf, userOf } from './state.js';
 
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
@@ -61,8 +62,31 @@ export async function informesView() {
       if (e.code !== 'reports_locked' && !/usuario y contrase/i.test(e.message)) throw e;
       page.replaceChildren(el('div', { class: 'page-h' }, el('h1', {}, 'Informes')), gate(open)); return;
     }
+    if (new URLSearchParams(location.hash.split('?')[1] || '').get('vista') === 'produccion') { await drawProductionPage(); return; }
     draw(all);
   };
+  async function drawProduction() {
+    const q = new URLSearchParams((location.hash.split('?')[1]) || '');
+    const data = await api('GET', `/api/informes/produccion${state.client ? `?client=${state.client}` : ''}`);
+    const years = data.years.map((y) => String(y.year)).reverse();
+    const ui = { year: q.get('anio') ?? (years.includes(String(new Date().getFullYear())) ? String(new Date().getFullYear()) : ''), setYear: (y) => { ui.year = ui.year === y ? '' : y; paint(); } };
+    const holder = el('div');
+    const yearSel = select([['', 'Todos los años'], ...years.map((y) => [y, y])], ui.year, { 'aria-label': 'Año', onchange: (ev) => { ui.year = ev.target.value; paint(); } });
+    function paint() { yearSel.value = ui.year; holder.replaceChildren(produccionView(data, ui)); history.replaceState(null, '', `#/informes?vista=produccion&anio=${ui.year}`); }
+    paint();
+    return [el('div', { class: 'toolbar rep-bar-f' }, yearSel), holder];
+  }
+  function tabs(active) {
+    const t = (id, label) => el('a', { class: `tab${active === id ? ' on' : ''}`, href: id === 'produccion' ? '#/informes?vista=produccion' : '#/informes' }, label);
+    return el('div', { class: 'tabs seg rep-tabs' }, t('acciones', 'Acciones'), t('produccion', 'Producción: consumos y gastos'));
+  }
+  async function drawProductionPage() {
+    page.replaceChildren(head(), tabs('produccion'), ...(await drawProduction()));
+  }
+  const head = () => el('div', { class: 'page-h' }, el('h1', {}, 'Informes'), el('span', { style: { marginLeft: 'auto', display: 'flex', gap: '8px' } },
+    el('button', { class: 'btn ghost', type: 'button', onclick: () => window.print() }, 'Imprimir'),
+    el('button', { class: 'btn ghost', type: 'button', onclick: async () => { await api('POST', '/api/informes/bloquear'); toast('Informes bloqueados'); open(); } }, 'Bloquear')),
+    el('p', { class: 'sub' }, state.client ? `Solo ${clientOf(state.client)?.name}.` : 'Todos los clientes.'));
   function draw(all) {
     const f = { year: String(new Date().getFullYear()), type: '', status: '', billing: '', owner: '', by: 'fecha' };
     const years = [...new Set(all.map((e) => e.year))].sort((a, b) => b - a);
@@ -111,11 +135,7 @@ export async function informesView() {
           el('div', { class: 'rep-grid' }, g.items.map(card))))].filter(Boolean));
     }
     render();
-    page.replaceChildren(
-      el('div', { class: 'page-h' }, el('h1', {}, 'Informes'), el('span', { style: { marginLeft: 'auto', display: 'flex', gap: '8px' } },
-        el('button', { class: 'btn ghost', type: 'button', onclick: () => window.print() }, 'Imprimir'),
-        el('button', { class: 'btn ghost', type: 'button', onclick: async () => { await api('POST', '/api/informes/bloquear'); toast('Informes bloqueados'); open(); } }, 'Bloquear')),
-        el('p', { class: 'sub' }, state.client ? `Solo ${clientOf(state.client)?.name}.` : 'Todos los clientes.')),
+    page.replaceChildren(head(), tabs('acciones'),
       bar, body);
   }
   await open();
