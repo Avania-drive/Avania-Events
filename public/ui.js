@@ -84,7 +84,8 @@ export const statusBadge = (label, color) => el('span', { class: 'st', style: { 
 // Ventana modal con foco atrapado, Esc y clic fuera.
 export function openModal({ title, body, actions = [], wide = false }) {
   const prev = document.activeElement;
-  const close = () => { box.remove(); prev?.focus?.(); };
+  const close = () => { removeEventListener('hashchange', close); box.remove(); prev?.focus?.(); };
+  addEventListener('hashchange', close);   // al cambiar de pantalla no se queda una ventana abierta encima
   const box = el('div', { class: 'modal', onmousedown: (e) => e.target === box && close() },
     el('div', { class: `card dlg${wide ? ' wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
       el('div', { class: 'dlg-h' }, el('h2', {}, title), el('button', { class: 'x', type: 'button', 'aria-label': 'Cerrar', onclick: close }, '✕')),
