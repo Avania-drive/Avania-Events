@@ -489,3 +489,9 @@ main.auth-card .err { min-height: 18px; }
 .task .tmeta input[type=date] { width: 146px; }
 
 .kv .pos { color: #15803d; } .kv .neg { color: #b91c1c; }
+
+/* Cierre de la acción */
+.closeform textarea { min-height: 70px; } .closeform .stars { margin-top: 2px; }
+.closecost { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; }
+.costrow { display: flex; align-items: center; justify-content: space-between; gap: 14px; } .costrow input { max-width: 160px; text-align: right; } .costrow .neg { color: #b91c1c; }
+.closeform > p.wide { grid-column: 1 / -1; }

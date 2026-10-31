@@ -98,8 +98,12 @@ ok('busca por referencia', (await ana.call('GET', '/api/events?search=ALB-001'))
 ok('filtro con id raro → 400', (await ana.call('GET', '/api/events?type=zzz')).s === 400);
 
 console.log('Panel de inicio');
-await ana.call('PATCH', `/api/events/${ev2.id}`, { status: 'terminado', rating: 4 });
-await ana.call('PATCH', `/api/events/${ev2.id}`, { invoiced: false, budget: 4631 });
+const sinCierre = await ana.call('PATCH', `/api/events/${ev2.id}`, { status: 'terminado', rating: 4 });
+ok('no se cierra sin la ficha de cierre y los costes', sinCierre.s === 400 && sinCierre.j.code === 'cierre_incompleto' && sinCierre.j.missing.length >= 5 && !sinCierre.j.missing.some((m) => /patrocin/i.test(m)), JSON.stringify(sinCierre.j));
+await ana.call('POST', `/api/events/${ev2.id}/tasks`, { title: 'Catering', cost: 100 });
+const cierre = await ana.call('PATCH', `/api/events/${ev2.id}`, { status: 'terminado', rating: 4, participants: 300, kpi_result: 'Bien', incidents: 'Ninguna', improvements: 'Más personal', notes_next: 'Repetir', budget: 4631 });
+ok('cierra con todo rellenado (patrocinadores opcional)', cierre.s === 200 && cierre.j.event.status === 'terminado', JSON.stringify(cierre.j));
+await ana.call('PATCH', `/api/events/${ev2.id}`, { invoiced: false });
 await ana.call('PATCH', `/api/tasks/${t2.id}`, { due_on: '2020-01-01', owner_id: anaId });
 r = (await ana.call('GET', '/api/dashboard')).j;
 ok('cuenta lo pendiente de facturar', r.counts.por_facturar === 1 && r.counts.por_facturar_importe === 4631, JSON.stringify(r.counts));
@@ -286,7 +290,7 @@ console.log('Bloqueo por falta de valoración y permisos');
   const meta4 = (await ana.call('GET', '/api/meta')).j;
   const evb = (await ana.call('POST', '/api/events', { name: 'Para bloquear', client_id: meta4.clients[0].id, clone_tasks: [{ title: 'Una tarea', section_id: meta4.sections[0].id }] })).j.event;
   ok('en proceso se edita con normalidad', (await ana.call('PATCH', `/api/events/${evb.id}`, { name: 'Para bloquear 2' })).s === 200);
-  await ana.call('PATCH', `/api/events/${evb.id}`, { status: 'terminado' });
+  await q("update events set status = 'terminado' where id = $1", [evb.id]);   // como las del histórico: terminadas sin valoración
   const d1 = (await ana.call('GET', `/api/events/${evb.id}`)).j;
   ok('terminada y sin valoración queda bloqueada', d1.lock.locked === true && d1.lock.needs_rating === true);
   ok('bloqueada: no deja cambiar el nombre', (await ana.call('PATCH', `/api/events/${evb.id}`, { name: 'Otro' })).s === 423);

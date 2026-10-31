@@ -230,7 +230,50 @@ export async function eventView(id, openTaskId = null) {
   const dateIn = (k, label) => field(label, el('input', { type: 'date', value: e[k] ?? '', onchange: (ev) => { set(k, ev.target.value || null); if (k === 'starts_on' && ev.target.value) { set('year', Number(ev.target.value.slice(0, 4))); yearIn.value = ev.target.value.slice(0, 4); } } }));
   const yearIn = el('input', { type: 'number', min: 2000, max: 2100, value: e.year, onchange: (ev) => set('year', Number(ev.target.value)) });
 
-  const statusSel = select(Object.entries(state.meta.eventStatus), e.status, { class: 'stsel', 'aria-label': 'Estado', style: { '--c': STATUS_COLOR[e.status] }, onchange: (ev) => { ev.target.style.setProperty('--c', STATUS_COLOR[ev.target.value]); set('status', ev.target.value); } });
+  const statusSel = select(Object.entries(state.meta.eventStatus), e.status, { class: 'stsel', 'aria-label': 'Estado', style: { '--c': STATUS_COLOR[e.status] }, onchange: (ev) => {
+    if (ev.target.value === 'terminado' && e.status !== 'terminado') { ev.target.value = e.status; closeModal(); return; }   // terminar exige rellenar la ficha de cierre
+    ev.target.style.setProperty('--c', STATUS_COLOR[ev.target.value]); set('status', ev.target.value);
+  } });
+  // Cierre de la acción: valoración, ficha de cierre y costes. Es la única forma de pasar a «Terminado».
+  function closeModal() {
+    const v = { rating: e.rating ?? null };
+    const live2 = tasks.filter((t) => t.status !== 'archivada');
+    const tcost = live2.reduce((n, t) => n + (Number(t.cost) || 0), 0);
+    const starBox = el('div', { class: 'stars', role: 'group', 'aria-label': 'Valoración de 1 a 5' });
+    const drawS = () => starBox.replaceChildren(...[1, 2, 3, 4, 5].map((n) => el('button', { type: 'button', class: n <= (v.rating || 0) ? 'on' : '', 'aria-label': `${n} de 5`, onclick: () => { v.rating = n; drawS(); } }, icon('star'))));
+    drawS();
+    const num = el('input', { type: 'number', min: 0, value: e.participants ?? '' });
+    const ta = (k, rows = 3, ph = '') => el('textarea', { rows, placeholder: ph }, e[k] ?? '');
+    const kpi = ta('kpi_result'), inc = ta('incidents', 3, 'Si no hubo ninguna, escribe «Ninguna»'), spon = ta('sponsors', 2), imp = ta('improvements'), nxt = ta('notes_next');
+    const budget = el('input', { type: 'text', inputmode: 'decimal', value: e.budget ?? '', placeholder: '0' });
+    const result = el('strong', {});
+    const calc = () => { const b = Number(String(budget.value).replace(',', '.')); result.textContent = budget.value === '' || Number.isNaN(b) ? '—' : `${fmtMoney(b - tcost) || '0 €'}${b > 0 ? ` (${Math.round(((b - tcost) / b) * 100)} % de margen)` : ''}`; };
+    budget.addEventListener('input', calc); calc();
+    const err = el('div', { class: 'err', role: 'alert' });
+    const costBlock = !unlocked
+      ? el('div', { class: 'field wide' }, el('label', {}, 'Costes'), el('p', { class: 'muted' }, 'Los importes están ocultos. Desbloquéalos para poder cerrar la acción. ', lockedChip(() => { toast('Importes desbloqueados: vuelve a elegir «Terminado»'); location.reload(); })))
+      : el('div', { class: 'field wide closecost' },
+        el('label', {}, 'Costes (obligatorio: toda acción tiene coste)'),
+        el('div', { class: 'costrow' }, el('span', {}, 'Coste de las tareas'), tcost > 0 ? el('b', {}, fmtMoney(tcost)) : el('b', { class: 'neg' }, 'Sin costes: anótalos en las tareas')),
+        el('div', { class: 'costrow' }, el('span', {}, 'Presupuesto a cliente (€)'), budget),
+        el('div', { class: 'costrow' }, el('span', {}, 'Resultado'), result));
+    openModal({ title: `Cerrar la acción · ${e.ref}`, wide: true, body: el('div', { class: 'fields closeform' },
+      el('p', { class: 'muted wide', style: { margin: 0 } }, 'Para terminar la acción hay que rellenar todo esto. Solo los patrocinadores son opcionales.'),
+      field('Valoración (1 a 5)', starBox), field('Participantes / asistencia', num),
+      (() => { const f = field('Resultado / KPI', kpi); f.className += ' wide'; return f; })(),
+      (() => { const f = field('Incidencias', inc); f.className += ' wide'; return f; })(),
+      (() => { const f = field('Patrocinadores (opcional)', spon); f.className += ' wide'; return f; })(),
+      (() => { const f = field('Qué mejorar la próxima vez', imp); f.className += ' wide'; return f; })(),
+      (() => { const f = field('Notas para el año que viene', nxt); f.className += ' wide'; return f; })(),
+      costBlock, el('div', { class: 'field wide' }, err)),
+      actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Terminar la acción', keep: true, run: async (_ev, close) => {
+        err.textContent = '';
+        const body = { status: 'terminado', rating: v.rating, participants: num.value === '' ? null : Number(num.value), kpi_result: kpi.value, incidents: inc.value, sponsors: spon.value, improvements: imp.value, notes_next: nxt.value };
+        if (unlocked) body.budget = budget.value === '' ? null : String(budget.value).replace(',', '.');
+        try { await flush.flush?.(); await api('PATCH', `/api/events/${id}`, body); close(); toast('Acción terminada'); location.reload(); }
+        catch (er) { err.textContent = er.message; return false; }
+      } }] });
+  }
   const prioSel = select(Object.entries(state.meta.priorities), e.priority, { 'aria-label': 'Prioridad', onchange: (ev) => set('priority', ev.target.value) });
   const title = el('input', { class: 'title', type: 'text', value: e.name, maxlength: 200, 'aria-label': 'Nombre de la acción', oninput: (ev) => set('name', ev.target.value) });
 

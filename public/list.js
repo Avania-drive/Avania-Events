@@ -81,17 +81,9 @@ export async function listView(scope) {
   function drawBoard(list) {
     const cols = Object.entries(state.meta.eventStatus).map(([key, label]) => {
       const cards = list.filter((e) => e.status === key);
-      const col = el('div', { class: 'bcol', 'data-status': key,
-        ondragover: (ev) => { ev.preventDefault(); col.classList.add('over'); }, ondragleave: () => col.classList.remove('over'),
-        ondrop: async (ev) => {
-          ev.preventDefault(); col.classList.remove('over');
-          const id = ev.dataTransfer.getData('text/plain'); const e = events.find((x) => x.id === id);
-          if (!e || e.status === key) return;
-          const before = e.status; e.status = key; draw();
-          try { await api('PATCH', `/api/events/${id}`, { status: key }); loadEvents(); } catch (er) { e.status = before; draw(); toast(er.message, true); }
-        } },
+      const col = el('div', { class: 'bcol', 'data-status': key },   // el estado solo se cambia en la ficha, arriba, junto al nombre
       el('h4', {}, el('i', { class: 'dot', style: { width: '8px', height: '8px', borderRadius: '50%', background: STATUS_COLOR[key] } }), label, el('small', { class: 'muted' }, String(cards.length))),
-        cards.map((e) => el('a', { class: 'card bcard', href: `#/evento/${e.id}`, draggable: 'true', ondragstart: (ev) => ev.dataTransfer.setData('text/plain', e.id) },
+        cards.map((e) => el('a', { class: 'card bcard', href: `#/evento/${e.id}`},
           el('div', { class: 'top' }, el('span', { class: 'ref' }, e.ref), cliChip(e), typeChip(e)), el('div', { class: 'nm' }, e.name),
           el('div', { class: 'meta' }, el('span', {}, fmtRange(e.starts_on, e.ends_on)), e.owner_id ? ownerCell(e.owner_id) : null, unlocked && e.budget != null ? el('span', {}, fmtMoney(e.budget)) : null), progress(e))));
       return col;

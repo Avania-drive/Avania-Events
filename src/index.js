@@ -313,6 +313,17 @@ app.post('/api/events', ...staff, wrap(async (req, res) => {
 app.patch('/api/events/:id', ...staff, wrap(async (req, res) => {
   const cur = await loadEvent(req.params.id);
   const d = cleanEvent(req.body, { partial: true });
+  if (d.status === 'terminado' && cur.status !== 'terminado') {   // cerrar una acción exige la ficha de cierre y los costes (solo los patrocinadores son opcionales)
+    const m = { ...cur, ...d }, blank = (v) => v == null || String(v).trim() === '';
+    const missing = [];
+    if (m.rating == null) missing.push('la valoración (estrellas)');
+    if (m.participants == null) missing.push('los participantes / asistencia');
+    for (const [k, label] of [['kpi_result', 'el resultado / KPI'], ['incidents', 'las incidencias (si no hubo, escribe «Ninguna»)'], ['improvements', 'qué mejorar la próxima vez'], ['notes_next', 'las notas para el año que viene']]) if (blank(m[k])) missing.push(label);
+    if (!(Number(m.budget) > 0)) missing.push('el presupuesto a cliente (importe de facturación)');
+    const tc = Number((await q("select coalesce(sum(cost), 0) c from tasks where event_id = $1 and status <> 'archivada'", [cur.id])).rows[0].c);
+    if (!(tc > 0)) missing.push('el coste de las tareas (toda acción tiene coste)');
+    if (missing.length) throw Object.assign(fail(400, `Para terminar la acción falta: ${missing.join('; ')}.`), { code: 'cierre_incompleto', missing });
+  }
   if (d.starts_on !== undefined && d.year === undefined && d.starts_on) d.year = Number(d.starts_on.slice(0, 4));
   if (typeof req.body.archived === 'boolean') d.archived = req.body.archived;
   if (Object.keys(d).length) {
@@ -800,7 +811,7 @@ app.get('/invitacion', (_req, res) => res.sendFile(path.join(PUBLIC, 'invitacion
 app.use(express.static(PUBLIC, { index: 'index.html', extensions: ['html'], setHeaders: (res, p) => { if (/\.(js|css|html)$/.test(p)) res.setHeader('Cache-Control', 'no-cache'); } }));
 app.use('/api', (_req, res) => res.status(404).json({ error: 'No existe' }));
 app.use((err, _req, res, _next) => {
-  if (err.status && (err.status < 500 || err.status === 503)) return res.status(err.status).json({ error: err.message });
+  if (err.status && (err.status < 500 || err.status === 503)) return res.status(err.status).json({ error: err.message, ...(err.code ? { code: err.code, missing: err.missing } : {}) });
   console.error(err);
   res.status(500).json({ error: 'Error del servidor' });
 });
